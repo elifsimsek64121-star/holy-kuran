@@ -1,5 +1,3 @@
-// Full corrected main.dart with necessary imports and fixes.
-
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
@@ -23,7 +21,7 @@ import 'package:vibration/vibration.dart';
 import 'package:share_plus/share_plus.dart';
 
 // =============================================================================
-// SABİTLER
+// SABİTLER ve GLOBAL DEĞİŞKENLER
 // =============================================================================
 
 final Map<String, Map<String, String>> reciters = {
@@ -44,27 +42,75 @@ final Map<String, String> translations = {
 
 final List<String> juzNames = List.generate(30, (index) => 'Cüz ${index + 1}');
 
+// Global sure isimleri listesi
+final List<Map<String, dynamic>> surahNames = [];
+
+Future<void> _loadSurahNames() async {
+  if (surahNames.isNotEmpty) return;
+
+  try {
+    final response = await http
+        .get(Uri.parse('https://api.alquran.cloud/v1/meta'))
+        .timeout(const Duration(seconds: 12));
+
+    if (response.statusCode == 200) {
+      final jsonData = jsonDecode(response.body) as Map<String, dynamic>;
+
+      if (jsonData['data'] is Map<String, dynamic> &&
+          jsonData['data']['surahs'] is Map<String, dynamic> &&
+          jsonData['data']['surahs']['references'] is List) {
+        
+        final references = jsonData['data']['surahs']['references'] as List<dynamic>;
+        
+        surahNames.clear();
+        surahNames.addAll(
+          references.map((item) => Map<String, dynamic>.from(item as Map)).toList(),
+        );
+        
+        debugPrint('Sure isimleri yüklendi: ${surahNames.length} adet');
+      } else {
+        debugPrint('API yanıt formatı beklenmedik');
+      }
+    } else {
+      debugPrint('Meta API durumu: ${response.statusCode}');
+    }
+  } catch (e, stack) {
+    debugPrint('Sure isimleri yüklenemedi: $e');
+    debugPrint('Stack: $stack');
+  }
+}
+
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
-  // Initialize Hive once at app start
   await Hive.initFlutter();
+
+  // Sure isimlerini yükle - hata olsa bile devam et
+  try {
+    await _loadSurahNames();
+  } catch (e) {
+    debugPrint('main içinde sure yükleme hatası: $e');
+  }
 
   final prefs = await SharedPreferences.getInstance();
   final dark = prefs.getBool('darkMode') ?? false;
   final lang = prefs.getString('language') ?? 'tr';
 
-  runApp(MyApp(initialDarkMode: dark, initialLanguage: lang));
+  runApp(MyApp(
+    initialDarkMode: dark,
+    initialLanguage: lang,
+  ));
 }
 
 class MyApp extends StatefulWidget {
   final bool initialDarkMode;
   final String initialLanguage;
 
-  const MyApp(
-      {super.key,
-      required this.initialDarkMode,
-      required this.initialLanguage});
+  const MyApp({
+    super.key,
+    required this.initialDarkMode,
+    required this.initialLanguage,
+  });
 
   @override
   State<MyApp> createState() => _MyAppState();
@@ -111,8 +157,7 @@ class _MyAppState extends State<MyApp> {
         cardTheme: CardThemeData(
           color: isDark ? const Color(0xFF1E1E1E) : Colors.white,
           elevation: 3,
-          shape:
-              RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
         ),
       ),
       home: RootScreen(
@@ -126,7 +171,7 @@ class _MyAppState extends State<MyApp> {
 }
 
 // =============================================================================
-// ANA EKRAN (değişiklik yok)
+// ANA EKRAN (RootScreen)
 // =============================================================================
 class RootScreen extends StatefulWidget {
   final VoidCallback toggleTheme;
@@ -179,19 +224,14 @@ class _RootScreenState extends State<RootScreen> {
       ),
       bottomNavigationBar: NavigationBar(
         selectedIndex: _selectedIndex,
-        onDestinationSelected: (index) =>
-            setState(() => _selectedIndex = index),
+        onDestinationSelected: (index) => setState(() => _selectedIndex = index),
         destinations: [
-          NavigationDestination(icon: const Icon(Icons.book), label: 'Kur\'an'),
-          NavigationDestination(icon: const Icon(Icons.timer), label: 'Namaz'),
-          NavigationDestination(
-              icon: const Icon(Icons.explore), label: 'Kıble'),
-          NavigationDestination(
-              icon: const Icon(Icons.auto_awesome), label: 'Dualar'),
-          NavigationDestination(
-              icon: const Icon(Icons.favorite), label: 'Zikir'),
-          NavigationDestination(
-              icon: const Icon(Icons.menu_book), label: 'Mushaf'),
+          NavigationDestination(icon: Icon(Icons.book), label: widget.language == 'en' ? 'Quran' : 'Kur\'an'),
+          NavigationDestination(icon: Icon(Icons.timer), label: widget.language == 'en' ? 'Prayer' : 'Namaz'),
+          NavigationDestination(icon: Icon(Icons.explore), label: widget.language == 'en' ? 'Qibla' : 'Kıble'),
+          NavigationDestination(icon: Icon(Icons.auto_awesome), label: widget.language == 'en' ? 'Duas' : 'Dualar'),
+          NavigationDestination(icon: Icon(Icons.favorite), label: widget.language == 'en' ? 'Dhikr' : 'Zikir'),
+          NavigationDestination(icon: Icon(Icons.menu_book), label: widget.language == 'en' ? 'Mushaf' : 'Mushaf'),
         ],
       ),
     );
@@ -199,7 +239,7 @@ class _RootScreenState extends State<RootScreen> {
 }
 
 // =============================================================================
-// KUR'AN ANA EKRAN (ARAMA ÇALIŞIYOR)
+// KUR'AN ANA EKRAN
 // =============================================================================
 class QuranMainScreen extends StatefulWidget {
   final String language;
@@ -239,33 +279,28 @@ class _QuranMainScreenState extends State<QuranMainScreen>
           child: TextField(
             controller: _searchController,
             decoration: InputDecoration(
-              labelText: 'Sure Ara...',
+              labelText: widget.language == 'en' ? 'Search Surah...' : 'Sure Ara...',
               prefixIcon: const Icon(Icons.search),
-              border:
-                  OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+              border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
               filled: true,
             ),
           ),
         ),
         TabBar.secondary(
           controller: _tabController,
-          tabs: const [
-            Tab(text: 'Arapça'),
-            Tab(text: 'Meal'),
-            Tab(text: 'Ses'),
+          tabs: [
+            Tab(text: widget.language == 'en' ? 'Arabic' : 'Arapça'),
+            Tab(text: widget.language == 'en' ? 'Translation' : 'Meal'),
+            Tab(text: widget.language == 'en' ? 'Audio' : 'Ses'),
           ],
         ),
         Expanded(
           child: TabBarView(
             controller: _tabController,
             children: [
-              QuranArabicScreen(
-                  reciter: currentReciter, searchQuery: _searchController.text),
-              QuranTranslationScreen(
-                  translation: currentTranslation,
-                  searchQuery: _searchController.text),
-              QuranAudioScreen(
-                  reciter: currentReciter, searchQuery: _searchController.text),
+              QuranArabicScreen(reciter: currentReciter, searchQuery: _searchController.text),
+              QuranTranslationScreen(translation: currentTranslation, searchQuery: _searchController.text),
+              QuranAudioScreen(reciter: currentReciter, searchQuery: _searchController.text),
             ],
           ),
         ),
@@ -277,15 +312,12 @@ class _QuranMainScreenState extends State<QuranMainScreen>
               OutlinedButton.icon(
                 onPressed: () => _showReciterPicker(context),
                 icon: const Icon(Icons.record_voice_over, size: 20),
-                label: Text(
-                    reciters[currentReciter]?['name']?.split(' ').last ??
-                        'Kari'),
+                label: Text(reciters[currentReciter]?['name']?.split(' ').last ?? 'Reciter'),
               ),
               OutlinedButton.icon(
                 onPressed: () => _showTranslationPicker(context),
                 icon: const Icon(Icons.translate, size: 20),
-                label: Text(translations[currentTranslation]?.split(' - ')[0] ??
-                    'Meal'),
+                label: Text(translations[currentTranslation]?.split(' - ')[0] ?? 'Translation'),
               ),
             ],
           ),
@@ -303,9 +335,7 @@ class _QuranMainScreenState extends State<QuranMainScreen>
           return ListTile(
             title: Text(entry.value['name']!),
             subtitle: Text(entry.value['style']!),
-            trailing: selected
-                ? const Icon(Icons.check_circle, color: Colors.teal)
-                : null,
+            trailing: selected ? const Icon(Icons.check_circle, color: Colors.teal) : null,
             onTap: () {
               setState(() => currentReciter = entry.key);
               Navigator.pop(context);
@@ -324,9 +354,7 @@ class _QuranMainScreenState extends State<QuranMainScreen>
           final selected = entry.key == currentTranslation;
           return ListTile(
             title: Text(entry.value!),
-            trailing: selected
-                ? const Icon(Icons.check_circle, color: Colors.teal)
-                : null,
+            trailing: selected ? const Icon(Icons.check_circle, color: Colors.teal) : null,
             onTap: () {
               setState(() => currentTranslation = entry.key);
               Navigator.pop(context);
@@ -339,14 +367,13 @@ class _QuranMainScreenState extends State<QuranMainScreen>
 }
 
 // =============================================================================
-// ARAPÇA OKUMA (ARAMA ÇALIŞIYOR)
+// ARAPÇA EKRAN (QuranArabicScreen)
 // =============================================================================
 class QuranArabicScreen extends StatefulWidget {
   final String reciter;
   final String searchQuery;
 
-  const QuranArabicScreen(
-      {super.key, required this.reciter, required this.searchQuery});
+  const QuranArabicScreen({super.key, required this.reciter, required this.searchQuery});
 
   @override
   State<QuranArabicScreen> createState() => _QuranArabicScreenState();
@@ -375,8 +402,7 @@ class _QuranArabicScreenState extends State<QuranArabicScreen> {
 
   Future<void> _fetchSurahs() async {
     try {
-      final res =
-          await http.get(Uri.parse('https://api.alquran.cloud/v1/meta'));
+      final res = await http.get(Uri.parse('https://api.alquran.cloud/v1/meta'));
       if (res.statusCode == 200) {
         final data = jsonDecode(res.body);
         setState(() {
@@ -385,7 +411,8 @@ class _QuranArabicScreenState extends State<QuranArabicScreen> {
           loading = false;
         });
       }
-    } catch (_) {
+    } catch (e) {
+      debugPrint('Surah list fetch error: $e');
       setState(() => loading = false);
     }
   }
@@ -431,8 +458,7 @@ class _QuranArabicScreenState extends State<QuranArabicScreen> {
     } else {
       bookmarks.add(index);
     }
-    await prefs.setStringList(
-        'bookmarks_arabic', bookmarks.map((e) => e.toString()).toList());
+    await prefs.setStringList('bookmarks_arabic', bookmarks.map((e) => e.toString()).toList());
     setState(() {});
   }
 
@@ -445,16 +471,15 @@ class _QuranArabicScreenState extends State<QuranArabicScreen> {
     });
 
     try {
-      final url =
-          'https://api.alquran.cloud/v1/surah/$number/editions/quran-uthmani,${widget.reciter}';
+      final url = 'https://api.alquran.cloud/v1/surah/$number/editions/quran-uthmani,${widget.reciter}';
       final res = await http.get(Uri.parse(url));
       if (res.statusCode == 200) {
         final data = jsonDecode(res.body)['data'] as List;
-        final uthmani = data
-            .firstWhere((e) => e['edition']['identifier'] == 'quran-uthmani');
+        final uthmani = data.firstWhere((e) => e['edition']['identifier'] == 'quran-uthmani');
         final audioData = data.firstWhere(
-            (e) => e['edition']['identifier'] == widget.reciter,
-            orElse: () => {'ayahs': []});
+          (e) => e['edition']['identifier'] == widget.reciter,
+          orElse: () => {'ayahs': []},
+        );
 
         final List<Map<String, dynamic>> verses = [];
         final audioAyahs = audioData['ayahs'] as List? ?? [];
@@ -463,8 +488,7 @@ class _QuranArabicScreenState extends State<QuranArabicScreen> {
           verses.add({
             'text': uthmani['ayahs'][i]['text'],
             'number': uthmani['ayahs'][i]['numberInSurah'],
-            'audio':
-                (i < audioAyahs.length) ? audioAyahs[i]['audio'] ?? '' : '',
+            'audio': (i < audioAyahs.length) ? audioAyahs[i]['audio'] ?? '' : '',
           });
         }
 
@@ -480,6 +504,7 @@ class _QuranArabicScreenState extends State<QuranArabicScreen> {
         await _saveLastPosition();
       }
     } catch (e) {
+      debugPrint('Surah load error: $e');
       setState(() => loading = false);
     }
   }
@@ -500,9 +525,13 @@ class _QuranArabicScreenState extends State<QuranArabicScreen> {
         audioLoading = false;
       });
       await _saveLastPosition();
-      scrollController.animateTo(index * 180.0,
-          duration: const Duration(milliseconds: 500), curve: Curves.easeInOut);
+      scrollController.animateTo(
+        index * 180.0,
+        duration: const Duration(milliseconds: 500),
+        curve: Curves.easeInOut,
+      );
     } catch (e) {
+      debugPrint('Audio play error: $e');
       setState(() => audioLoading = false);
     }
   }
@@ -546,9 +575,7 @@ class _QuranArabicScreenState extends State<QuranArabicScreen> {
                   child: ListTile(
                     leading: CircleAvatar(child: Text('${s['number']}')),
                     title: Text(s['englishName'] ?? '—'),
-                    subtitle: Text(s['name'] ?? '',
-                        textDirection: TextDirection.rtl,
-                        style: GoogleFonts.amiri()),
+                    subtitle: Text(s['name'] ?? '', textDirection: TextDirection.rtl, style: GoogleFonts.amiri()),
                     onTap: () => _loadSurah(s['number'] as int),
                   ),
                 );
@@ -561,9 +588,10 @@ class _QuranArabicScreenState extends State<QuranArabicScreen> {
                     padding: const EdgeInsets.all(16),
                     child: OutlinedButton(
                       onPressed: () => scrollController.animateTo(
-                          (lastAyah - 1) * 180.0,
-                          duration: const Duration(milliseconds: 600),
-                          curve: Curves.easeInOut),
+                        (lastAyah - 1) * 180.0,
+                        duration: const Duration(milliseconds: 600),
+                        curve: Curves.easeInOut,
+                      ),
                       child: Text('Devam et: Ayet $lastAyah'),
                     ),
                   ),
@@ -588,38 +616,28 @@ class _QuranArabicScreenState extends State<QuranArabicScreen> {
                               Text(
                                 ayah['text'],
                                 textDirection: TextDirection.rtl,
-                                style: GoogleFonts.amiri(
-                                    fontSize: 26, height: 1.8),
+                                style: GoogleFonts.amiri(fontSize: 26, height: 1.8),
                                 textAlign: TextAlign.right,
                               ),
                               const SizedBox(height: 12),
                               Row(
-                                mainAxisAlignment:
-                                    MainAxisAlignment.spaceBetween,
+                                mainAxisAlignment: MainAxisAlignment.spaceBetween,
                                 children: [
-                                  Text('Ayet ${ayah['number']}',
-                                      style:
-                                          const TextStyle(color: Colors.teal)),
+                                  Text('Ayet ${ayah['number']}', style: const TextStyle(color: Colors.teal)),
                                   Row(
                                     children: [
-                                      if (audioLoading && playing)
-                                        const CircularProgressIndicator(),
+                                      if (audioLoading && playing) const CircularProgressIndicator(),
                                       IconButton(
                                         icon: Icon(
-                                            playing
-                                                ? Icons.pause_circle_filled
-                                                : Icons.play_circle_fill,
-                                            size: 36,
-                                            color: Colors.teal),
+                                          playing ? Icons.pause_circle_filled : Icons.play_circle_fill,
+                                          size: 36,
+                                          color: Colors.teal,
+                                        ),
                                         onPressed: () => _playAyah(index),
                                       ),
+                                      IconButton(icon: const Icon(Icons.share), onPressed: () => _shareAyah(ayah)),
                                       IconButton(
-                                          icon: const Icon(Icons.share),
-                                          onPressed: () => _shareAyah(ayah)),
-                                      IconButton(
-                                        icon: Icon(bookmarked
-                                            ? Icons.bookmark
-                                            : Icons.bookmark_border),
+                                        icon: Icon(bookmarked ? Icons.bookmark : Icons.bookmark_border),
                                         onPressed: () => _toggleBookmark(index),
                                       ),
                                     ],
@@ -647,14 +665,13 @@ class _QuranArabicScreenState extends State<QuranArabicScreen> {
 }
 
 // =============================================================================
-// MEAL EKRANI (ARAMA ÇALIŞIYOR)
+// MEAL EKRANI
 // =============================================================================
 class QuranTranslationScreen extends StatefulWidget {
   final String translation;
   final String searchQuery;
 
-  const QuranTranslationScreen(
-      {super.key, required this.translation, required this.searchQuery});
+  const QuranTranslationScreen({super.key, required this.translation, required this.searchQuery});
 
   @override
   State<QuranTranslationScreen> createState() => _QuranTranslationScreenState();
@@ -677,8 +694,7 @@ class _QuranTranslationScreenState extends State<QuranTranslationScreen> {
 
   Future<void> _fetchSurahs() async {
     try {
-      final res =
-          await http.get(Uri.parse('https://api.alquran.cloud/v1/meta'));
+      final res = await http.get(Uri.parse('https://api.alquran.cloud/v1/meta'));
       if (res.statusCode == 200) {
         final data = jsonDecode(res.body);
         setState(() {
@@ -688,6 +704,7 @@ class _QuranTranslationScreenState extends State<QuranTranslationScreen> {
         });
       }
     } catch (e) {
+      debugPrint('Translation surah fetch error: $e');
       setState(() => loading = false);
     }
   }
@@ -705,8 +722,7 @@ class _QuranTranslationScreenState extends State<QuranTranslationScreen> {
     } else {
       bookmarks.add(index);
     }
-    await prefs.setStringList(
-        'bookmarks_translation', bookmarks.map((e) => e.toString()).toList());
+    await prefs.setStringList('bookmarks_translation', bookmarks.map((e) => e.toString()).toList());
     setState(() {});
   }
 
@@ -718,14 +734,14 @@ class _QuranTranslationScreenState extends State<QuranTranslationScreen> {
     });
 
     try {
-      final url =
-          'https://api.alquran.cloud/v1/surah/$number/editions/quran-uthmani,${widget.translation}';
+      final url = 'https://api.alquran.cloud/v1/surah/$number/editions/quran-uthmani,${widget.translation}';
       final res = await http.get(Uri.parse(url));
       if (res.statusCode == 200) {
         final data = jsonDecode(res.body)['data'] as List;
         final transEdition = data.firstWhere(
-            (e) => e['edition']['identifier'] == widget.translation,
-            orElse: () => data.last);
+          (e) => e['edition']['identifier'] == widget.translation,
+          orElse: () => data.last,
+        );
 
         setState(() {
           ayahs = (transEdition['ayahs'] as List)
@@ -738,6 +754,7 @@ class _QuranTranslationScreenState extends State<QuranTranslationScreen> {
         });
       }
     } catch (e) {
+      debugPrint('Translation load error: $e');
       setState(() => loading = false);
     }
   }
@@ -777,9 +794,7 @@ class _QuranTranslationScreenState extends State<QuranTranslationScreen> {
                   child: ListTile(
                     leading: CircleAvatar(child: Text('${s['number']}')),
                     title: Text(s['englishName'] ?? '—'),
-                    subtitle: Text(s['name'] ?? '',
-                        textDirection: TextDirection.rtl,
-                        style: GoogleFonts.amiri()),
+                    subtitle: Text(s['name'] ?? '', textDirection: TextDirection.rtl, style: GoogleFonts.amiri()),
                     onTap: () => _loadSurah(s['number'] as int),
                   ),
                 );
@@ -797,21 +812,15 @@ class _QuranTranslationScreenState extends State<QuranTranslationScreen> {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text('Ayet ${ay['number']}',
-                            style: const TextStyle(color: Colors.teal)),
+                        Text('Ayet ${ay['number']}', style: const TextStyle(color: Colors.teal)),
                         const SizedBox(height: 8),
-                        Text(ay['text']!,
-                            style: const TextStyle(fontSize: 16, height: 1.6)),
+                        Text(ay['text']!, style: const TextStyle(fontSize: 16, height: 1.6)),
                         Row(
                           mainAxisAlignment: MainAxisAlignment.end,
                           children: [
+                            IconButton(icon: const Icon(Icons.share), onPressed: () => _shareAyah(ay)),
                             IconButton(
-                                icon: const Icon(Icons.share),
-                                onPressed: () => _shareAyah(ay)),
-                            IconButton(
-                              icon: Icon(bookmarked
-                                  ? Icons.bookmark
-                                  : Icons.bookmark_border),
+                              icon: Icon(bookmarked ? Icons.bookmark : Icons.bookmark_border),
                               onPressed: () => _toggleBookmark(i),
                             ),
                           ],
@@ -833,8 +842,7 @@ class QuranAudioScreen extends StatefulWidget {
   final String reciter;
   final String searchQuery;
 
-  const QuranAudioScreen(
-      {super.key, required this.reciter, required this.searchQuery});
+  const QuranAudioScreen({super.key, required this.reciter, required this.searchQuery});
 
   @override
   State<QuranAudioScreen> createState() => _QuranAudioScreenState();
@@ -859,8 +867,7 @@ class _QuranAudioScreenState extends State<QuranAudioScreen> {
 
   Future<void> _fetchSurahs() async {
     try {
-      final res =
-          await http.get(Uri.parse('https://api.alquran.cloud/v1/meta'));
+      final res = await http.get(Uri.parse('https://api.alquran.cloud/v1/meta'));
       if (res.statusCode == 200) {
         final data = jsonDecode(res.body);
         setState(() {
@@ -870,6 +877,7 @@ class _QuranAudioScreenState extends State<QuranAudioScreen> {
         });
       }
     } catch (e) {
+      debugPrint('Audio surah fetch error: $e');
       setState(() => loading = false);
     }
   }
@@ -884,22 +892,19 @@ class _QuranAudioScreenState extends State<QuranAudioScreen> {
     });
 
     try {
-      final url =
-          'https://api.alquran.cloud/v1/surah/$number/editions/${widget.reciter}';
+      final url = 'https://api.alquran.cloud/v1/surah/$number/editions/${widget.reciter}';
       final res = await http.get(Uri.parse(url));
       if (res.statusCode == 200) {
         final data = jsonDecode(res.body)['data'];
         final ayahs = data['ayahs'] as List;
         setState(() {
-          audioUrls = ayahs
-              .map((a) => a['audio'] as String? ?? '')
-              .where((s) => s.isNotEmpty)
-              .toList();
+          audioUrls = ayahs.map((a) => a['audio'] as String? ?? '').where((s) => s.isNotEmpty).toList();
           loading = false;
           audioLoading = false;
         });
       }
     } catch (e) {
+      debugPrint('Audio load error: $e');
       setState(() {
         loading = false;
         audioLoading = false;
@@ -919,17 +924,20 @@ class _QuranAudioScreenState extends State<QuranAudioScreen> {
         playingIndex = index;
         audioLoading = false;
       });
-      scrollController.animateTo(index * 60.0,
-          duration: const Duration(milliseconds: 400), curve: Curves.easeInOut);
+      scrollController.animateTo(
+        index * 60.0,
+        duration: const Duration(milliseconds: 400),
+        curve: Curves.easeInOut,
+      );
     } catch (e) {
+      debugPrint('Audio play error: $e');
       setState(() => audioLoading = false);
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    if (loading || audioLoading)
-      return const Center(child: CircularProgressIndicator());
+    if (loading || audioLoading) return const Center(child: CircularProgressIndicator());
 
     return Scaffold(
       appBar: AppBar(
@@ -971,8 +979,9 @@ class _QuranAudioScreenState extends State<QuranAudioScreen> {
                 Padding(
                   padding: const EdgeInsets.all(16),
                   child: Text(
-                      'Ses - ${surahs.firstWhereOrNull((s) => s['number'] == activeSurah)?['englishName'] ?? ''}',
-                      style: Theme.of(context).textTheme.titleLarge),
+                    'Ses - ${surahs.firstWhereOrNull((s) => s['number'] == activeSurah)?['englishName'] ?? ''}',
+                    style: Theme.of(context).textTheme.titleLarge,
+                  ),
                 ),
                 Expanded(
                   child: ListView.builder(
@@ -982,12 +991,10 @@ class _QuranAudioScreenState extends State<QuranAudioScreen> {
                     itemBuilder: (context, i) {
                       final playing = playingIndex == i;
                       return ListTile(
-                        tileColor:
-                            playing ? Colors.teal.withOpacity(0.15) : null,
+                        tileColor: playing ? Colors.teal.withOpacity(0.15) : null,
                         title: Text('Ayet ${i + 1}'),
                         trailing: IconButton(
-                          icon: Icon(playing ? Icons.pause : Icons.play_arrow,
-                              color: Colors.teal),
+                          icon: Icon(playing ? Icons.pause : Icons.play_arrow, color: Colors.teal),
                           onPressed: () => _play(i),
                         ),
                       );
@@ -1008,7 +1015,7 @@ class _QuranAudioScreenState extends State<QuranAudioScreen> {
 }
 
 // =============================================================================
-// NAMAZ VAKİTLERİ (değişiklik yok)
+// NAMAZ VAKİTLERİ
 // =============================================================================
 class PrayerTimesScreen extends StatefulWidget {
   final String language;
@@ -1034,12 +1041,10 @@ class _PrayerTimesScreenState extends State<PrayerTimesScreen> {
   Future<void> _fetch() async {
     try {
       var perm = await Geolocator.checkPermission();
-      if (perm == LocationPermission.denied)
-        perm = await Geolocator.requestPermission();
-      if (perm == LocationPermission.deniedForever ||
-          perm == LocationPermission.denied) {
+      if (perm == LocationPermission.denied) perm = await Geolocator.requestPermission();
+      if (perm == LocationPermission.deniedForever || perm == LocationPermission.denied) {
         setState(() {
-          error = 'Konum izni reddedildi';
+          error = widget.language == 'en' ? 'Location permission denied' : 'Konum izni reddedildi';
           loading = false;
         });
         return;
@@ -1047,21 +1052,19 @@ class _PrayerTimesScreenState extends State<PrayerTimesScreen> {
 
       final pos = await Geolocator.getCurrentPosition();
       final ts = DateTime.now().millisecondsSinceEpoch ~/ 1000;
-      final url =
-          'https://api.aladhan.com/v1/timings/$ts?latitude=${pos.latitude}&longitude=${pos.longitude}&method=13';
+      final url = 'https://api.aladhan.com/v1/timings/$ts?latitude=${pos.latitude}&longitude=${pos.longitude}&method=13';
 
       final res = await http.get(Uri.parse(url));
       if (res.statusCode == 200) {
         final data = jsonDecode(res.body)['data'];
         setState(() => timings = data['timings']);
 
-        final places =
-            await placemarkFromCoordinates(pos.latitude, pos.longitude);
+        final places = await placemarkFromCoordinates(pos.latitude, pos.longitude);
         if (places.isNotEmpty) {
           final p = places.first;
           setState(() {
-            city = p.locality ?? p.subAdministrativeArea ?? 'Bilinmiyor';
-            country = p.country ?? 'Bilinmiyor';
+            city = p.locality ?? p.subAdministrativeArea ?? 'Unknown';
+            country = p.country ?? 'Unknown';
           });
         }
       }
@@ -1086,17 +1089,16 @@ class _PrayerTimesScreenState extends State<PrayerTimesScreen> {
             child: ListTile(
               leading: const Icon(Icons.location_on, color: Colors.teal),
               title: Text('$city, $country'),
-              subtitle: const Text('Mevcut Konum'),
+              subtitle: Text(widget.language == 'en' ? 'Current Location' : 'Mevcut Konum'),
             ),
           ),
         ...keys.map((k) => Card(
               child: ListTile(
                 title: Text(k),
-                trailing: Text(timings?[k] ?? '--:--',
-                    style: const TextStyle(
-                        fontSize: 20,
-                        fontWeight: FontWeight.bold,
-                        color: Colors.teal)),
+                trailing: Text(
+                  timings?[k] ?? '--:--',
+                  style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: Colors.teal),
+                ),
               ),
             )),
       ],
@@ -1105,7 +1107,7 @@ class _PrayerTimesScreenState extends State<PrayerTimesScreen> {
 }
 
 // =============================================================================
-// KIBLE (değişiklik yok)
+// KIBLE EKRANI
 // =============================================================================
 class QiblaScreen extends StatefulWidget {
   const QiblaScreen({super.key});
@@ -1121,7 +1123,6 @@ class _QiblaScreenState extends State<QiblaScreen> {
   String error = '';
 
   StreamSubscription<MagnetometerEvent>? magSub;
-
   double filteredHeading = 0;
   final double alpha = 0.08;
 
@@ -1140,33 +1141,25 @@ class _QiblaScreenState extends State<QiblaScreen> {
   Future<void> _calcQibla() async {
     try {
       var p = await Geolocator.checkPermission();
-      if (p == LocationPermission.denied)
-        p = await Geolocator.requestPermission();
-      if (p == LocationPermission.denied ||
-          p == LocationPermission.deniedForever) {
+      if (p == LocationPermission.denied) p = await Geolocator.requestPermission();
+      if (p == LocationPermission.denied || p == LocationPermission.deniedForever) {
         setState(() => error = 'Konum izni reddedildi');
         return;
       }
 
       final pos = await Geolocator.getCurrentPosition();
-      const klat = 21.4225;
-      const klon = 39.8262;
-
-      final lat1 = pos.latitude * math.pi / 180;
-      final lon1 = pos.longitude * math.pi / 180;
-      final lat2 = klat * math.pi / 180;
-      final dlon = (klon - pos.longitude) * math.pi / 180;
-
-      final y = math.sin(dlon) * math.cos(lat2);
-      final x = math.cos(lat1) * math.sin(lat2) -
-          math.sin(lat1) * math.cos(lat2) * math.cos(dlon);
-      double bearing = math.atan2(y, x) * 180 / math.pi;
-      if (bearing < 0) bearing += 360;
-
-      setState(() {
-        qibla = bearing;
-        hasLoc = true;
-      });
+      final url = 'http://api.aladhan.com/v1/qibla/${pos.latitude}/${pos.longitude}';
+      final res = await http.get(Uri.parse(url));
+      if (res.statusCode == 200) {
+        final data = jsonDecode(res.body)['data'];
+        double bearing = data['direction'] as double;
+        setState(() {
+          qibla = bearing;
+          hasLoc = true;
+        });
+      } else {
+        setState(() => error = 'API hatası: ${res.statusCode}');
+      }
     } catch (e) {
       setState(() => error = e.toString());
     }
@@ -1195,16 +1188,13 @@ class _QiblaScreenState extends State<QiblaScreen> {
               AnimatedRotation(
                 turns: rot,
                 duration: const Duration(milliseconds: 300),
-                child: Icon(Icons.explore,
-                    size: 280, color: Colors.teal.withOpacity(0.7)),
+                child: Icon(Icons.explore, size: 280, color: Colors.teal.withOpacity(0.7)),
               ),
-              const Icon(Icons.arrow_drop_up,
-                  color: Colors.redAccent, size: 100),
+              const Icon(Icons.arrow_drop_up, color: Colors.redAccent, size: 100),
             ],
           ),
           const SizedBox(height: 40),
-          Text('Kıble: ${qibla.toStringAsFixed(1)}°',
-              style: const TextStyle(fontSize: 22)),
+          Text('Kıble: ${qibla.toStringAsFixed(1)}°', style: const TextStyle(fontSize: 22)),
           Text('Yön: ${heading.toStringAsFixed(1)}°'),
         ],
       ),
@@ -1213,38 +1203,60 @@ class _QiblaScreenState extends State<QiblaScreen> {
 }
 
 // =============================================================================
-// DUALAR (değişiklik yok)
+// DUALAR EKRANI
 // =============================================================================
-class DuaScreen extends StatelessWidget {
+class DuaScreen extends StatefulWidget {
   final String language;
   const DuaScreen({super.key, required this.language});
 
   @override
+  State<DuaScreen> createState() => _DuaScreenState();
+}
+
+class _DuaScreenState extends State<DuaScreen> {
+  List<Map<String, dynamic>> duas = [];
+  bool loading = true;
+  String? error;
+
+  @override
+  void initState() {
+    super.initState();
+    _fetchDuas();
+  }
+
+  Future<void> _fetchDuas() async {
+    try {
+      // Örnek bir dua kaynağı (gerçek bir API kullanıyorsanız burayı değiştirin)
+      final url = 'https://raw.githubusercontent.com/iammadhussain/duas/master/duas.json';
+      final res = await http.get(Uri.parse(url));
+      if (res.statusCode == 200) {
+        final data = jsonDecode(res.body) as List;
+        setState(() {
+          duas = data.map((d) => {
+                'title': d['title'] ?? 'Dua',
+                'ar': d['arabic'] ?? '',
+                'tr': d['translation'] ?? '',
+              }).toList();
+          loading = false;
+        });
+      } else {
+        setState(() => error = 'Dua API hatası: ${res.statusCode}');
+      }
+    } catch (e) {
+      setState(() => error = e.toString());
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
-    final list = [
-      {
-        'title': 'Uyanınca',
-        'ar': 'الحمد لله الذي أحيانا بعد ما أماتنا وإليه النشور',
-        'tr': 'Allah’a hamdolsun ki bizi öldürdükten sonra diriltti...'
-      },
-      {'title': 'Yemekten önce', 'ar': 'بسم الله', 'tr': 'Allah’ın adıyla.'},
-      {
-        'title': 'Yemekten sonra',
-        'ar': 'الحمد لله الذي أطعمني هذا ورزقنيه من غير حول مني ولا قوة',
-        'tr': 'Allah’a hamdolsun ki bu yiyeceği bize yedirdi...'
-      },
-      {
-        'title': 'Eve girerken',
-        'ar': 'بسم الله ولجنا، وبسم الله خرجنا، وعلى الله ربنا توكلنا',
-        'tr': 'Allah’ın adıyla girdik, Allah’ın adıyla çıktık...'
-      },
-    ];
+    if (loading) return const Center(child: CircularProgressIndicator());
+    if (error != null) return Center(child: Text(error!));
 
     return ListView.builder(
       padding: const EdgeInsets.all(16),
-      itemCount: list.length,
+      itemCount: duas.length,
       itemBuilder: (ctx, i) {
-        final d = list[i];
+        final d = duas[i];
         return Card(
           child: ExpansionTile(
             title: Text(d['title']!),
@@ -1254,14 +1266,10 @@ class DuaScreen extends StatelessWidget {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const Text('Arapça:',
-                        style: TextStyle(fontWeight: FontWeight.bold)),
-                    Text(d['ar']!,
-                        textDirection: TextDirection.rtl,
-                        style: GoogleFonts.amiri(fontSize: 22)),
+                    const Text('Arapça:', style: TextStyle(fontWeight: FontWeight.bold)),
+                    Text(d['ar']!, textDirection: TextDirection.rtl, style: GoogleFonts.amiri(fontSize: 22)),
                     const SizedBox(height: 16),
-                    const Text('Anlamı:',
-                        style: TextStyle(fontWeight: FontWeight.bold)),
+                    const Text('Anlamı:', style: TextStyle(fontWeight: FontWeight.bold)),
                     Text(d['tr']!),
                     const SizedBox(height: 12),
                     Align(
@@ -1283,7 +1291,7 @@ class DuaScreen extends StatelessWidget {
 }
 
 // =============================================================================
-// ZİKİR (değişiklik yok)
+// ZİKİR EKRANI
 // =============================================================================
 class ZikirScreen extends StatefulWidget {
   const ZikirScreen({super.key});
@@ -1328,8 +1336,7 @@ class _ZikirScreenState extends State<ZikirScreen> {
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Text('$count',
-              style: GoogleFonts.orbitron(fontSize: 120, color: Colors.teal)),
+          Text('$count', style: GoogleFonts.orbitron(fontSize: 120, color: Colors.teal)),
           const SizedBox(height: 60),
           GestureDetector(
             onTap: _increment,
@@ -1355,6 +1362,9 @@ class _ZikirScreenState extends State<ZikirScreen> {
   }
 }
 
+// =============================================================================
+// TAM MUSHAF EKRANI (FullMushafScreen)
+// =============================================================================
 class FullMushafScreen extends StatefulWidget {
   const FullMushafScreen({super.key});
 
@@ -1362,8 +1372,7 @@ class FullMushafScreen extends StatefulWidget {
   State<FullMushafScreen> createState() => _FullMushafScreenState();
 }
 
-class _FullMushafScreenState extends State<FullMushafScreen>
-    with WidgetsBindingObserver {
+class _FullMushafScreenState extends State<FullMushafScreen> with WidgetsBindingObserver {
   final _pageController = PageController();
   final _player = AudioPlayer();
   final _scrollController = ScrollController();
@@ -1394,6 +1403,7 @@ class _FullMushafScreenState extends State<FullMushafScreen>
   final dio = Dio();
 
   int? currentJuz;
+  int? selectedSurah;
 
   @override
   void initState() {
@@ -1470,8 +1480,7 @@ class _FullMushafScreenState extends State<FullMushafScreen>
           'surah': int.parse(parts[0]),
           'ayah': int.parse(parts[1]),
           'juz': v['juz'],
-          'url':
-              'https://everyayah.com/data/Alafasy_128kbps/${parts[0].padLeft(3, '0')}${parts[1].padLeft(3, '0')}.mp3',
+          'url': 'https://everyayah.com/data/Alafasy_128kbps/${parts[0].padLeft(3, '0')}${parts[1].padLeft(3, '0')}.mp3',
         };
       }).toList();
 
@@ -1481,7 +1490,6 @@ class _FullMushafScreenState extends State<FullMushafScreen>
       downloadedPage = await pageDir.exists();
 
       _updatePageMeta(page);
-      _computeAndCachePageDuration(); // fire and forget
       _saveProgress();
     } catch (e) {
       debugPrint('Sayfa yükleme hatası: $e');
@@ -1493,11 +1501,6 @@ class _FullMushafScreenState extends State<FullMushafScreen>
   void _updatePageMeta(int page) {
     currentJuz = ayahs.isNotEmpty ? ayahs.first['juz'] : ((page - 1) ~/ 20) + 1;
     if (mounted) setState(() {});
-  }
-
-  Future<void> _computeAndCachePageDuration() async {
-    // ... (bu fonksiyonu önceki mesajlardan kopyalayabilirsin, burada kısalttım)
-    // süre hesaplama mantığını bozmadan bırakıyorum, istersen detay ekleriz
   }
 
   String _formatSeconds(double s) {
@@ -1545,7 +1548,6 @@ class _FullMushafScreenState extends State<FullMushafScreen>
 
     final ayah = ayahs[index];
     final url = ayah['url'] as String;
-    // local dosya kontrolü eklenebilir...
 
     try {
       await _player.setUrl(url);
@@ -1566,8 +1568,7 @@ class _FullMushafScreenState extends State<FullMushafScreen>
     }
 
     if (waqfSeconds > 0) {
-      await Future.delayed(
-          Duration(milliseconds: (waqfSeconds * 1000).round()));
+      await Future.delayed(Duration(milliseconds: (waqfSeconds * 1000).round()));
     }
 
     final next = currentAyahIndex + 1;
@@ -1581,8 +1582,7 @@ class _FullMushafScreenState extends State<FullMushafScreen>
   void _scrollAyahIntoView(int index) {
     final ctx = ayahKeys[index].currentContext;
     if (ctx != null) {
-      Scrollable.ensureVisible(ctx,
-          duration: const Duration(milliseconds: 400), alignment: 0.4);
+      Scrollable.ensureVisible(ctx, duration: const Duration(milliseconds: 400), alignment: 0.4);
     }
   }
 
@@ -1591,14 +1591,12 @@ class _FullMushafScreenState extends State<FullMushafScreen>
     if (bookmarksBox.containsKey(key)) {
       bookmarksBox.delete(key);
     } else {
-      bookmarksBox
-          .put(key, {'page': currentPage, 'ayahIndex': currentAyahIndex});
+      bookmarksBox.put(key, {'page': currentPage, 'ayahIndex': currentAyahIndex});
     }
     if (mounted) setState(() {});
   }
 
-  bool get isCurrentAyahBookmarked =>
-      bookmarksBox.containsKey('p${currentPage}_a$currentAyahIndex');
+  bool get isCurrentAyahBookmarked => bookmarksBox.containsKey('p${currentPage}_a$currentAyahIndex');
 
   void _saveProgress() {
     progressBox.put('last_page', currentPage);
@@ -1629,8 +1627,7 @@ class _FullMushafScreenState extends State<FullMushafScreen>
           autofocus: true,
         ),
         actions: [
-          TextButton(
-              onPressed: () => Navigator.pop(ctx), child: const Text("İptal")),
+          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text("İptal")),
           TextButton(
             onPressed: () {
               final p = int.tryParse(ctrl.text);
@@ -1651,33 +1648,64 @@ class _FullMushafScreenState extends State<FullMushafScreen>
     );
   }
 
-  void _jumpPages(int delta) {
-    final np = (currentPage + delta).clamp(1, totalPages);
-    if (np != currentPage) {
-      setState(() => currentPage = np);
-      sliderPageValue = np.toDouble();
-      _pageController.animateToPage(np - 1,
-          duration: const Duration(milliseconds: 400), curve: Curves.easeInOut);
-      _loadPage(np);
-    }
+  void _showSurahPicker() {
+    showModalBottomSheet(
+      context: context,
+      builder: (ctx) => ListView.builder(
+        itemCount: surahNames.length,
+        itemBuilder: (c, i) {
+          final s = surahNames[i];
+          return ListTile(
+            title: Text(s['englishName'] ?? 'Unknown'),
+            subtitle: Text(s['name'] ?? '', textDirection: TextDirection.rtl),
+            onTap: () async {
+              final surahNumber = s['number'] as int;
+              try {
+                final res = await http.get(Uri.parse(
+                    'https://api.quran.com/api/v4/verses/by_chapter/$surahNumber?fields=page_number'));
+                if (res.statusCode == 200) {
+                  final verses = jsonDecode(res.body)['verses'] as List;
+                  final firstPage = verses.first['page_number'] as int;
+                  setState(() {
+                    selectedSurah = surahNumber;
+                    currentPage = firstPage;
+                    sliderPageValue = firstPage.toDouble();
+                  });
+                  _pageController.jumpToPage(firstPage - 1);
+                  _loadPage(firstPage);
+                  Navigator.pop(ctx);
+                }
+              } catch (e) {
+                debugPrint('Sureye gitme hatası: $e');
+              }
+            },
+          );
+        },
+      ),
+    );
+  }
+
+  Color _getSurahColor(int surahNumber) {
+    return Colors.primaries[surahNumber % Colors.primaries.length].withOpacity(0.1);
   }
 
   @override
   Widget build(BuildContext context) {
     final bg = nightMode ? const Color(0xFF0F0F0F) : const Color(0xFFFDFAF5);
-    final textColor = nightMode ? Colors.white70 : Colors.black87;
-    final pageTime = _formatSeconds(0); // süre hesabı eklenebilir
 
     return Scaffold(
       backgroundColor: bg,
       appBar: AppBar(
-        title:
-            Text('Sayfa $currentPage', style: GoogleFonts.amiri(fontSize: 22)),
+        title: Text('Sayfa $currentPage', style: GoogleFonts.amiri(fontSize: 22)),
         centerTitle: true,
         actions: [
           IconButton(
             icon: Icon(nightMode ? Icons.light_mode : Icons.dark_mode),
             onPressed: () => setState(() => nightMode = !nightMode),
+          ),
+          IconButton(
+            icon: const Icon(Icons.book),
+            onPressed: _showSurahPicker,
           ),
         ],
       ),
@@ -1739,6 +1767,8 @@ class _FullMushafScreenState extends State<FullMushafScreen>
                           final idx = entry.key;
                           final ayah = entry.value;
                           final active = idx == currentAyahIndex;
+                          final surahNumber = ayah['surah'] as int;
+                          final surahName = surahNames.firstWhereOrNull((s) => s['number'] == surahNumber)?['englishName'] ?? 'Sure';
 
                           return GestureDetector(
                             onTap: () => _playAyah(idx),
@@ -1748,16 +1778,23 @@ class _FullMushafScreenState extends State<FullMushafScreen>
                               margin: const EdgeInsets.symmetric(vertical: 6),
                               padding: const EdgeInsets.all(10),
                               decoration: BoxDecoration(
-                                color: active
-                                    ? Colors.teal.withOpacity(0.15)
-                                    : null,
+                                color: active ? Colors.teal.withOpacity(0.15) : _getSurahColor(surahNumber),
                                 borderRadius: BorderRadius.circular(8),
                               ),
-                              child: RichText(
-                                textDirection: TextDirection.rtl,
-                                textAlign: TextAlign.justify,
-                                text: buildColoredAyahText(
-                                    ayah['text'] as String),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.end,
+                                children: [
+                                  Text(
+                                    '$surahName - Ayet ${ayah['ayah']}',
+                                    style: const TextStyle(fontSize: 14, color: Colors.teal),
+                                    textDirection: TextDirection.rtl,
+                                  ),
+                                  RichText(
+                                    textDirection: TextDirection.rtl,
+                                    textAlign: TextAlign.justify,
+                                    text: buildColoredAyahText(ayah['text'] as String),
+                                  ),
+                                ],
                               ),
                             ),
                           );
@@ -1779,10 +1816,7 @@ class _FullMushafScreenState extends State<FullMushafScreen>
                               onPressed: () => _playAyah(currentAyahIndex - 1),
                             ),
                             IconButton(
-                              icon: Icon(isPlaying
-                                  ? Icons.pause_circle
-                                  : Icons.play_circle),
-                              iconSize: 48,
+                              icon: Icon(isPlaying ? Icons.pause_circle : Icons.play_circle, size: 48),
                               onPressed: () => _playAyah(currentAyahIndex),
                             ),
                             IconButton(
@@ -1790,20 +1824,12 @@ class _FullMushafScreenState extends State<FullMushafScreen>
                               onPressed: () => _playAyah(currentAyahIndex + 1),
                             ),
                             IconButton(
-                              icon: Icon(isCurrentAyahBookmarked
-                                  ? Icons.bookmark
-                                  : Icons.bookmark_border),
+                              icon: Icon(isCurrentAyahBookmarked ? Icons.bookmark : Icons.bookmark_border),
                               onPressed: toggleBookmark,
                             ),
-                            IconButton(
-                                icon: const Icon(Icons.download),
-                                onPressed: () {}),
-                            IconButton(
-                                icon: const Icon(Icons.search),
-                                onPressed: _showPageSearchDialog),
-                            IconButton(
-                                icon: const Icon(Icons.restore),
-                                onPressed: _resetProgress),
+                            IconButton(icon: const Icon(Icons.download), onPressed: () {}),
+                            IconButton(icon: const Icon(Icons.search), onPressed: _showPageSearchDialog),
+                            IconButton(icon: const Icon(Icons.restore), onPressed: _resetProgress),
                           ],
                         ),
                       ),
