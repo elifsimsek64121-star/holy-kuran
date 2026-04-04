@@ -9,6 +9,7 @@ import 'package:flutter_compass/flutter_compass.dart';
 import 'package:geocoding/geocoding.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:google_mobile_ads/google_mobile_ads.dart';
 import 'package:http/http.dart' as http;
 import 'package:just_audio/just_audio.dart';
 import 'package:share_plus/share_plus.dart';
@@ -34,7 +35,6 @@ class L {
     }
   }
 
-  // Nav
   static String get quran => t('Kur\'an', 'Quran', 'القرآن');
   static String get prayer => t('Namaz', 'Prayer', 'الصلاة');
   static String get qibla => t('Kıble', 'Qibla', 'القبلة');
@@ -43,7 +43,6 @@ class L {
   static String get dhikr => t('Zikir', 'Dhikr', 'الذكر');
   static String get settings => t('Ayarlar', 'Settings', 'الإعدادات');
 
-  // Quran
   static String get surahList => t('Sure Listesi', 'Surah List', 'قائمة السور');
   static String get mushaf => t('Mushaf', 'Mushaf', 'المصحف');
   static String get audio => t('Sesli', 'Audio', 'صوتي');
@@ -62,7 +61,6 @@ class L {
   static String get copy => t('Kopyala', 'Copy', 'نسخ');
   static String get copied => t('Kopyalandı!', 'Copied!', 'تم النسخ!');
 
-  // Prayer
   static String get prayerTimes =>
       t('Namaz Vakitleri', 'Prayer Times', 'مواقيت الصلاة');
   static String get nextPrayer =>
@@ -72,7 +70,6 @@ class L {
       'Location permission denied. Please enable it in settings.',
       'تم رفض إذن الموقع.');
 
-  // Qibla
   static String get qiblaFinder =>
       t('Kıble Bulucu', 'Qibla Finder', 'محدد القبلة');
   static String get calibrate => t(
@@ -84,7 +81,6 @@ class L {
   static String get deviceHeading =>
       t('Cihaz Yönü', 'Device Heading', 'اتجاه الجهاز');
 
-  // Zikir
   static String get target => t('Hedef', 'Target', 'الهدف');
   static String get reset => t('Sıfırla', 'Reset', 'إعادة تعيين');
   static String get save => t('Kaydet', 'Save', 'حفظ');
@@ -92,7 +88,6 @@ class L {
   static String get noHistory =>
       t('Henüz kayıt yok', 'No records yet', 'لا سجلات بعد');
 
-  // Daily
   static String get dailyVerse =>
       t('Günün Ayeti', 'Verse of the Day', 'آية اليوم');
   static String get dailyHadith =>
@@ -100,7 +95,6 @@ class L {
   static String get dailyDhikr =>
       t('Tavsiye Zikir', 'Recommended Dhikr', 'الذكر الموصى به');
 
-  // Settings
   static String get language => t('Dil', 'Language', 'اللغة');
   static String get theme => t('Tema', 'Theme', 'المظهر');
   static String get dark => t('Koyu', 'Dark', 'داكن');
@@ -109,6 +103,301 @@ class L {
   static String get translation => t('Meal/Çeviri', 'Translation', 'الترجمة');
   static String get appTitle =>
       t('Kur\'an-ı Kerim', 'Holy Quran', 'القرآن الكريم');
+}
+
+// ─────────────────────────────────────────────
+//  ADMOB YÖNETİCİSİ
+class AdManager {
+  static final AdManager _instance = AdManager._internal();
+  factory AdManager() => _instance;
+  AdManager._internal();
+
+  // ── Gerçek Reklam ID'leri ──
+  static const String _bannerAdUnitId =
+      'ca-app-pub-6551908952762916/8664401808';
+  static const String _interstitialAdUnitId =
+      'ca-app-pub-6551908952762916/2785389162';
+  static const String _rewardedAdUnitId =
+      'ca-app-pub-6551908952762916/8033117467';
+  static const String _nativeAdUnitId =
+      'ca-app-pub-6551908952762916/9681970000';
+
+  // ── Test ID'leri (Geliştirme sırasında bunları kullan) ──
+  // static const String _nativeAdUnitId = 'ca-app-pub-3940256099942544/2247696110';
+
+  InterstitialAd? _interstitialAd;
+  RewardedAd? _rewardedAd;
+  NativeAd? _nativeAd;
+
+  bool _interstitialReady = false;
+  bool _rewardedReady = false;
+  bool _nativeReady = false;
+
+  int _surahOpenCount = 0;
+
+  Future<void> initialize() async {
+    await MobileAds.instance.initialize();
+    _loadInterstitial();
+    _loadRewarded();
+    _loadNative();
+  }
+
+  // ── BANNER ──
+  BannerAd createBanner({required AdSize size}) {
+    return BannerAd(
+      adUnitId: _bannerAdUnitId,
+      size: size,
+      request: const AdRequest(),
+      listener: BannerAdListener(
+        onAdFailedToLoad: (ad, error) {
+          print('Banner failed to load: $error');
+          ad.dispose();
+        },
+      ),
+    );
+  }
+
+  // ── GEÇİŞ REKLAMI ──
+  void _loadInterstitial() {
+    InterstitialAd.load(
+      adUnitId: _interstitialAdUnitId,
+      request: const AdRequest(),
+      adLoadCallback: InterstitialAdLoadCallback(
+        onAdLoaded: (ad) {
+          _interstitialAd = ad;
+          _interstitialReady = true;
+          ad.setImmersiveMode(true);
+        },
+        onAdFailedToLoad: (error) {
+          print('Interstitial failed to load: $error');
+          _interstitialReady = false;
+          Future.delayed(const Duration(seconds: 30), _loadInterstitial);
+        },
+      ),
+    );
+  }
+
+  void maybeShowInterstitial(BuildContext context) {
+    _surahOpenCount++;
+    if (_surahOpenCount % 5 != 0) return;
+    if (!_interstitialReady || _interstitialAd == null) return;
+
+    _interstitialAd!.fullScreenContentCallback = FullScreenContentCallback(
+      onAdDismissedFullScreenContent: (ad) {
+        ad.dispose();
+        _interstitialReady = false;
+        _loadInterstitial();
+      },
+      onAdFailedToShowFullScreenContent: (ad, error) {
+        print('Interstitial failed to show: $error');
+        ad.dispose();
+        _interstitialReady = false;
+        _loadInterstitial();
+      },
+    );
+    _interstitialAd!.show();
+  }
+
+  // ── ÖDÜLLÜ REKLAM ──
+  void _loadRewarded() {
+    RewardedAd.load(
+      adUnitId: _rewardedAdUnitId,
+      request: const AdRequest(),
+      rewardedAdLoadCallback: RewardedAdLoadCallback(
+        onAdLoaded: (ad) {
+          _rewardedAd = ad;
+          _rewardedReady = true;
+        },
+        onAdFailedToLoad: (error) {
+          print('Rewarded failed to load: $error');
+          _rewardedReady = false;
+          Future.delayed(const Duration(seconds: 30), _loadRewarded);
+        },
+      ),
+    );
+  }
+
+  bool get isRewardedReady => _rewardedReady;
+
+  void showRewarded({
+    required VoidCallback onRewarded,
+    VoidCallback? onDismissed,
+  }) {
+    if (!_rewardedReady || _rewardedAd == null) {
+      onDismissed?.call();
+      return;
+    }
+
+    _rewardedAd!.fullScreenContentCallback = FullScreenContentCallback(
+      onAdDismissedFullScreenContent: (ad) {
+        ad.dispose();
+        _rewardedReady = false;
+        _loadRewarded();
+        onDismissed?.call();
+      },
+      onAdFailedToShowFullScreenContent: (ad, error) {
+        print('Rewarded failed to show: $error');
+        ad.dispose();
+        _rewardedReady = false;
+        _loadRewarded();
+        onDismissed?.call();
+      },
+    );
+    _rewardedAd!.show(onUserEarnedReward: (_, __) => onRewarded());
+  }
+
+  // ── NATIVE REKLAM (Düzeltilmiş) ──
+  void _loadNative() {
+    _nativeAd?.dispose();
+    _nativeAd = null;
+    _nativeReady = false;
+
+    _nativeAd = NativeAd(
+      adUnitId: _nativeAdUnitId,
+      // factoryId: 'listTile'  ← Bu satır kaldırıldı!
+      nativeTemplateStyle: NativeTemplateStyle(
+        templateType: TemplateType.small, // 80px yüksekliğe uygun
+        mainBackgroundColor: Colors.transparent,
+        cornerRadius: 14,
+        callToActionTextStyle: NativeTemplateTextStyle(
+          textColor: Colors.white,
+          backgroundColor: Colors.blue,
+          style: NativeTemplateFontStyle.bold,
+        ),
+      ),
+      request: const AdRequest(),
+      listener: NativeAdListener(
+        onAdLoaded: (ad) {
+          _nativeReady = true;
+          print('NativeAd başarıyla yüklendi');
+        },
+        onAdFailedToLoad: (ad, error) {
+          print('NativeAd yüklenemedi: $error');
+          ad.dispose();
+          _nativeReady = false;
+          _nativeAd = null;
+
+          // 30 saniye sonra tekrar dene
+          Future.delayed(const Duration(seconds: 30), _loadNative);
+        },
+      ),
+    )..load();
+  }
+
+  bool get isNativeReady => _nativeReady;
+  NativeAd? get nativeAd => _nativeAd;
+
+  void disposeNative() {
+    _nativeAd?.dispose();
+    _nativeAd = null;
+    _nativeReady = false;
+  }
+
+  // Tüm reklamları temizle (uygulama kapanırken)
+  void disposeAll() {
+    _interstitialAd?.dispose();
+    _rewardedAd?.dispose();
+    disposeNative();
+  }
+}
+
+// ─────────────────────────────────────────────
+//  BANNER WIDGET
+// ─────────────────────────────────────────────
+class AdBannerWidget extends StatefulWidget {
+  final AdSize size;
+  const AdBannerWidget({super.key, this.size = AdSize.banner});
+
+  @override
+  State<AdBannerWidget> createState() => _AdBannerWidgetState();
+}
+
+class _AdBannerWidgetState extends State<AdBannerWidget> {
+  BannerAd? _banner;
+  bool _loaded = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _banner = AdManager().createBanner(size: widget.size);
+    _banner!.load().then((_) {
+      if (mounted) setState(() => _loaded = true);
+    }).catchError((error) {
+      print('Banner load error: $error');
+    });
+  }
+
+  @override
+  void dispose() {
+    _banner?.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (!_loaded || _banner == null) return const SizedBox.shrink();
+
+    return SizedBox(
+      width: _banner!.size.width.toDouble(),
+      height: _banner!.size.height.toDouble(),
+      child: AdWidget(ad: _banner!),
+    );
+  }
+}
+
+// ─────────────────────────────────────────────
+//  NATIVE AD KART (Günlük ekranı için)
+// ─────────────────────────────────────────────
+class NativeAdCard extends StatelessWidget {
+  const NativeAdCard({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    final adManager = AdManager();
+
+    if (!adManager.isNativeReady || adManager.nativeAd == null) {
+      return const SizedBox.shrink();
+    }
+
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+
+    return Container(
+      height: 90, // small template için biraz daha güvenli yükseklik
+      margin: const EdgeInsets.only(bottom: 12),
+      decoration: BoxDecoration(
+        color: isDark ? const Color(0xFF161B22) : Colors.white,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(
+          color: isDark
+              ? Colors.white.withOpacity(0.06)
+              : Colors.black.withOpacity(0.06),
+        ),
+      ),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(14),
+        child: Stack(
+          children: [
+            AdWidget(ad: adManager.nativeAd!),
+            Positioned(
+              top: 6,
+              right: 8,
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                decoration: BoxDecoration(
+                  color: Colors.grey.withOpacity(0.25),
+                  borderRadius: BorderRadius.circular(4),
+                ),
+                child: const Text(
+                  'Reklam',
+                  style: TextStyle(fontSize: 10, color: Colors.white70),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
 }
 
 // ─────────────────────────────────────────────
@@ -134,7 +423,6 @@ const Map<String, String> kTranslations = {
   'ar.muyassar': 'العربية – الميسر',
 };
 
-// MP3 CDN: everyayah.com — 128kbps, reliable
 String ayahAudioUrl(int surahNum, int ayahNum,
     {String reciter = 'Alafasy_128kbps'}) {
   final s = surahNum.toString().padLeft(3, '0');
@@ -142,7 +430,6 @@ String ayahAudioUrl(int surahNum, int ayahNum,
   return 'https://everyayah.com/data/$reciter/$s$a.mp3';
 }
 
-// Full surah audio — mp3quran.net
 String surahAudioUrl(int surahNum, {String folder = 'afs'}) {
   final s = surahNum.toString().padLeft(3, '0');
   return 'https://server8.mp3quran.net/$folder/$s.mp3';
@@ -403,6 +690,9 @@ const Map<String, Map<String, String>> kZikirList = {
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   SystemChrome.setPreferredOrientations([DeviceOrientation.portraitUp]);
+
+  // AdMob başlat
+  await AdManager().initialize();
 
   final prefs = await SharedPreferences.getInstance();
   final darkMode = prefs.getBool('dark_mode') ?? true;
@@ -689,7 +979,7 @@ class SurahMeta {
 }
 
 class AyahData {
-  final int number; // global quran number
+  final int number;
   final int numberInSurah;
   final String arabic;
   final String translation;
@@ -706,6 +996,10 @@ class AyahData {
 
 // ─────────────────────────────────────────────
 //  QURAN SCREEN
+//  ✦ Kuran okuma ekranında banner YOKTUR —
+//    okumayı böldüğü için kullanıcı deneyimi
+//    açısından en kötü yerdir.
+//  ✦ Sure listesinde geçiş reklamı tetiklenir.
 // ─────────────────────────────────────────────
 class QuranScreen extends StatefulWidget {
   final String reciter;
@@ -903,16 +1197,20 @@ class _QuranScreenState extends State<QuranScreen>
             itemCount: _filtered.length,
             itemBuilder: (ctx, i) => _SurahCard(
               surah: _filtered[i],
-              onTap: () => Navigator.push(
-                ctx,
-                MaterialPageRoute(
-                  builder: (_) => SurahDetailScreen(
-                    surah: _filtered[i],
-                    reciter: widget.reciter,
-                    translation: widget.translation,
+              onTap: () {
+                // Geçiş reklamı: 5 sure açılışında 1 kez — okumayı bozmaz
+                AdManager().maybeShowInterstitial(context);
+                Navigator.push(
+                  ctx,
+                  MaterialPageRoute(
+                    builder: (_) => SurahDetailScreen(
+                      surah: _filtered[i],
+                      reciter: widget.reciter,
+                      translation: widget.translation,
+                    ),
                   ),
-                ),
-              ).then((_) => _loadLastPos()),
+                ).then((_) => _loadLastPos());
+              },
             ),
           ),
         ),
@@ -1026,7 +1324,9 @@ class _SurahCard extends StatelessWidget {
 }
 
 // ─────────────────────────────────────────────
-//  SURAH DETAIL (Ayahlar)
+//  SURAH DETAIL
+//  ✦ Aktif okuma ekranında reklam YOK —
+//    ibadet ortamı korunur.
 // ─────────────────────────────────────────────
 class SurahDetailScreen extends StatefulWidget {
   final SurahMeta surah;
@@ -1078,7 +1378,6 @@ class _SurahDetailScreenState extends State<SurahDetailScreen> {
     });
   }
 
-  // API: alquran.cloud — uthmani + translation
   Future<void> _fetchSurah() async {
     setState(() {
       _loading = true;
@@ -1188,10 +1487,7 @@ class _SurahDetailScreenState extends State<SurahDetailScreen> {
       await _player.play();
       setState(() => _audioLoading = false);
     } catch (e) {
-      // fallback: try another CDN
       try {
-        final s = widget.surah.number.toString().padLeft(3, '0');
-        final a = _ayahs[idx].numberInSurah.toString().padLeft(3, '0');
         await _player.setUrl(
             'https://cdn.islamic.network/quran/audio/128/ar.alafasy/${'${_ayahs[idx].number}'}.mp3');
         await _player.play();
@@ -1259,7 +1555,6 @@ class _SurahDetailScreenState extends State<SurahDetailScreen> {
               ? _errorCenter(_error, _fetchSurah)
               : Column(
                   children: [
-                    // Surah header
                     Container(
                       padding: const EdgeInsets.symmetric(vertical: 14),
                       decoration: BoxDecoration(
@@ -1302,7 +1597,6 @@ class _SurahDetailScreenState extends State<SurahDetailScreen> {
                         ],
                       ),
                     ),
-                    // Ayah list
                     Expanded(
                       child: ListView.builder(
                         controller: _scrollCtrl,
@@ -1332,7 +1626,6 @@ class _SurahDetailScreenState extends State<SurahDetailScreen> {
                     ),
                   ],
                 ),
-      // Mini player bar
       bottomNavigationBar: _playingIdx >= 0
           ? _MiniPlayer(
               ayah: _ayahs[_playingIdx],
@@ -1399,7 +1692,6 @@ class _AyahCard extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.end,
           children: [
-            // Arabic text
             Text(
               ayah.arabic,
               textDirection: TextDirection.rtl,
@@ -1427,7 +1719,6 @@ class _AyahCard extends StatelessWidget {
             const SizedBox(height: 10),
             Row(
               children: [
-                // Ayah number badge
                 Container(
                   padding:
                       const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
@@ -1443,7 +1734,6 @@ class _AyahCard extends StatelessWidget {
                   ),
                 ),
                 const Spacer(),
-                // Actions
                 _IconBtn(
                   icon: isLoading
                       ? Icons.hourglass_empty
@@ -1540,7 +1830,7 @@ class _MiniPlayer extends StatelessWidget {
 }
 
 // ─────────────────────────────────────────────
-//  MUSHAF TAB  (quran.com API v4, sayfa sayfa)
+//  MUSHAF TAB
 // ─────────────────────────────────────────────
 class MushafTab extends StatefulWidget {
   final String reciter;
@@ -1577,7 +1867,6 @@ class _MushafTabState extends State<MushafTab> {
     });
   }
 
-  // quran.com API v4 — mushaf_id=3 = Medina Mushaf
   Future<void> _loadPage(int page) async {
     if (mounted)
       setState(() {
@@ -1648,7 +1937,6 @@ class _MushafTabState extends State<MushafTab> {
 
     return Column(
       children: [
-        // Page nav bar
         Container(
           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
           color: isDark ? const Color(0xFF161B22) : const Color(0xFFF5F1EB),
@@ -1709,7 +1997,6 @@ class _MushafTabState extends State<MushafTab> {
             ],
           ),
         ),
-        // Content
         Expanded(
           child: _loading
               ? _loadingCenter()
@@ -1722,7 +2009,6 @@ class _MushafTabState extends State<MushafTab> {
                           padding: const EdgeInsets.fromLTRB(16, 12, 16, 80),
                           child: Column(
                             children: [
-                              // Bismillah (if not surah 9 start and not page 1's fatiha)
                               if (_verses.isNotEmpty &&
                                   _verses.first['key']
                                       .toString()
@@ -1740,7 +2026,6 @@ class _MushafTabState extends State<MushafTab> {
                                     textAlign: TextAlign.center,
                                   ),
                                 ),
-                              // All verses in one justified block (authentic mushaf style)
                               RichText(
                                 textDirection: TextDirection.rtl,
                                 textAlign: TextAlign.justify,
@@ -1816,7 +2101,6 @@ class _MushafTabState extends State<MushafTab> {
                             ],
                           ),
                         ),
-                        // Font size controls
                         Positioned(
                           bottom: 12,
                           right: 12,
@@ -1836,7 +2120,6 @@ class _MushafTabState extends State<MushafTab> {
                             ],
                           ),
                         ),
-                        // Active verse player bar
                         if (_playingIdx >= 0)
                           Positioned(
                             bottom: 0,
@@ -1939,7 +2222,7 @@ class _PageJumpWidgetState extends State<_PageJumpWidget> {
 }
 
 // ─────────────────────────────────────────────
-//  AUDIO TAB (Tam Sure dinle)
+//  AUDIO TAB
 // ─────────────────────────────────────────────
 class AudioTab extends StatefulWidget {
   final List<SurahMeta> surahs;
@@ -1953,7 +2236,7 @@ class _AudioTabState extends State<AudioTab> {
   final _player = AudioPlayer();
   int? _playingSurah;
   bool _isPlaying = false;
-  String _currentReciter = 'afs'; // Alafasy folder on mp3quran.net
+  String _currentReciter = 'afs';
 
   static const Map<String, String> _reciters = {
     'afs': 'Mişari Raşid el-Afasî',
@@ -1995,7 +2278,6 @@ class _AudioTabState extends State<AudioTab> {
 
     return Column(
       children: [
-        // Reciter selector
         Padding(
           padding: const EdgeInsets.fromLTRB(12, 10, 12, 4),
           child: Row(
@@ -2077,6 +2359,7 @@ class _AudioTabState extends State<AudioTab> {
 
 // ─────────────────────────────────────────────
 //  NAMAZ VAKİTLERİ
+//  ✦ Sayfanın altında banner reklam
 // ─────────────────────────────────────────────
 class PrayerTimesScreen extends StatefulWidget {
   const PrayerTimesScreen({super.key});
@@ -2088,8 +2371,7 @@ class PrayerTimesScreen extends StatefulWidget {
 class _PrayerTimesScreenState extends State<PrayerTimesScreen> {
   Map<String, String>? _timings;
   Map<String, String>? _hijriDate;
-  String _locationInfo =
-      ''; // Örnek: "Ankara, Türkiye" veya "London, United Kingdom"
+  String _locationInfo = '';
   bool _loading = true;
   String _error = '';
   String _nextPrayer = '';
@@ -2156,30 +2438,24 @@ class _PrayerTimesScreenState extends State<PrayerTimesScreen> {
     }
 
     try {
-      // Konum izni
       var perm = await Geolocator.checkPermission();
       if (perm == LocationPermission.denied) {
         perm = await Geolocator.requestPermission();
       }
       if (perm == LocationPermission.denied ||
           perm == LocationPermission.deniedForever) {
-        throw Exception(L.locationPermDenied ?? 'Konum izni reddedildi');
+        throw Exception(L.locationPermDenied);
       }
 
-      // Konum al
       final pos = await Geolocator.getCurrentPosition(
         desiredAccuracy: LocationAccuracy.medium,
       );
 
-      // ==================== GLOBAL KONUM BİLGİSİ (Şehir + Ülke) ====================
       String city = '';
       String country = '';
       try {
-        final places = await placemarkFromCoordinates(
-          pos.latitude,
-          pos.longitude,
-        );
-
+        final places =
+            await placemarkFromCoordinates(pos.latitude, pos.longitude);
         if (places.isNotEmpty) {
           final p = places.first;
           city = (p.locality ??
@@ -2189,8 +2465,6 @@ class _PrayerTimesScreenState extends State<PrayerTimesScreen> {
                   '')
               .trim();
           country = (p.country ?? '').trim();
-
-          // Fallback'ler
           if (city.isEmpty && p.thoroughfare != null)
             city = p.thoroughfare!.trim();
           if (country.isEmpty) country = 'Unknown';
@@ -2199,16 +2473,12 @@ class _PrayerTimesScreenState extends State<PrayerTimesScreen> {
         debugPrint('Reverse geocoding error: $e');
       }
 
-      // Güzel konum gösterimi
       _locationInfo = city.isNotEmpty
           ? (country.isNotEmpty ? '$city, $country' : city)
           : 'Konum tespit ediliyor...';
 
-      // ==================== NAMAZ VAKİTLERİ - GLOBAL (Koordinat + Method 5) ====================
       final now = DateTime.now();
       final ts = now.millisecondsSinceEpoch ~/ 1000;
-
-      // Method 5 = Muslim World League (dünya genelinde en yaygın kullanılan)
       final url = 'https://api.aladhan.com/v1/timings/$ts'
           '?latitude=${pos.latitude}&longitude=${pos.longitude}&method=5';
 
@@ -2277,7 +2547,6 @@ class _PrayerTimesScreenState extends State<PrayerTimesScreen> {
       }
     }
 
-    // Gece yarısından sonra yarınki Fajr
     if (nextKey == null) {
       nextKey = 'Fajr';
       final fajrTime = _timings!['Fajr'];
@@ -2322,6 +2591,9 @@ class _PrayerTimesScreenState extends State<PrayerTimesScreen> {
           IconButton(icon: const Icon(Icons.refresh), onPressed: _fetch),
         ],
       ),
+      // ✦ Banner reklam Namaz sayfasının altında — namaz vakitlerini görmek
+      //   için aşağı kaydırma gerektirmez, doğal bir yerde durur.
+      bottomNavigationBar: const AdBannerWidget(size: AdSize.banner),
       body: _loading
           ? _loadingCenter()
           : _error.isNotEmpty
@@ -2331,7 +2603,6 @@ class _PrayerTimesScreenState extends State<PrayerTimesScreen> {
                   child: ListView(
                     padding: const EdgeInsets.all(14),
                     children: [
-                      // Konum + Hicri + Sıradaki Namaz Kartı
                       Container(
                         padding: const EdgeInsets.all(16),
                         decoration: BoxDecoration(
@@ -2416,8 +2687,6 @@ class _PrayerTimesScreenState extends State<PrayerTimesScreen> {
                         ),
                       ),
                       const SizedBox(height: 14),
-
-                      // Namaz Vakitleri Grid
                       GridView.count(
                         crossAxisCount: 2,
                         shrinkWrap: true,
@@ -2511,7 +2780,10 @@ class _PrayerCard extends StatelessWidget {
 }
 
 // ─────────────────────────────────────────────
-//  KIBLE EKRANI  (flutter_compass + Haversine)
+//  KIBLE EKRANI
+//  ✦ Sayfanın altında banner reklam —
+//    pusula dönerken ekrana dokunulmaz,
+//    banner altta güvenli bir alanda.
 // ─────────────────────────────────────────────
 class QiblaScreen extends StatefulWidget {
   const QiblaScreen({super.key});
@@ -2522,8 +2794,8 @@ class QiblaScreen extends StatefulWidget {
 
 class _QiblaScreenState extends State<QiblaScreen>
     with SingleTickerProviderStateMixin {
-  double _qiblaAngle = 0; // degrees from North, clockwise
-  double _compassHeading = 0; // device heading from North
+  double _qiblaAngle = 0;
+  double _compassHeading = 0;
   bool _hasLocation = false;
   bool _aligned = false;
   String _error = '';
@@ -2556,14 +2828,11 @@ class _QiblaScreenState extends State<QiblaScreen>
       final pos = await Geolocator.getCurrentPosition(
           desiredAccuracy: LocationAccuracy.medium);
 
-      // Haversine bearing to Kaaba
       final q = _haversineQibla(pos.latitude, pos.longitude);
-      // Distance to Kaaba
       final dist = Geolocator.distanceBetween(
               pos.latitude, pos.longitude, kKaabaLat, kKaabaLon) /
           1000;
 
-      // Reverse geocode
       try {
         final places =
             await placemarkFromCoordinates(pos.latitude, pos.longitude);
@@ -2581,7 +2850,6 @@ class _QiblaScreenState extends State<QiblaScreen>
         });
       }
 
-      // Start compass stream
       _compassSub = FlutterCompass.events?.listen((event) {
         if (event.heading == null) return;
         if (mounted) {
@@ -2597,8 +2865,6 @@ class _QiblaScreenState extends State<QiblaScreen>
     }
   }
 
-  // Haversine formula — azimuth from current position to Kaaba
-  // Returns bearing 0-360° clockwise from North
   double _haversineQibla(double lat, double lon) {
     final lat1 = lat * math.pi / 180;
     final lat2 = kKaabaLat * math.pi / 180;
@@ -2658,13 +2924,12 @@ class _QiblaScreenState extends State<QiblaScreen>
           appBar: AppBar(title: Text(L.qiblaFinder)), body: _loadingCenter());
     }
 
-    // The needle should point toward Qibla.
-    // Device heading = compass direction phone is facing.
-    // Arrow rotation = qiblaAngle - compassHeading  (so 0° = phone pointing at Qibla)
     final arrowAngle = (_qiblaAngle - _compassHeading) * math.pi / 180;
 
     return Scaffold(
       appBar: AppBar(title: Text(L.qiblaFinder)),
+      // ✦ Banner reklam altta — pusula kullanımını hiç bozmaz
+      bottomNavigationBar: const AdBannerWidget(size: AdSize.banner),
       body: SafeArea(
         child: SingleChildScrollView(
           child: Padding(
@@ -2677,14 +2942,12 @@ class _QiblaScreenState extends State<QiblaScreen>
                         fontSize: 12,
                         color: isDark ? Colors.white54 : Colors.black45)),
                 const SizedBox(height: 20),
-                // Compass + Arrow
                 SizedBox(
                   width: 280,
                   height: 280,
                   child: Stack(
                     alignment: Alignment.center,
                     children: [
-                      // Outer ring
                       AnimatedBuilder(
                         animation: _pulseCtrl,
                         builder: (_, __) => Container(
@@ -2699,14 +2962,12 @@ class _QiblaScreenState extends State<QiblaScreen>
                           ),
                         ),
                       ),
-                      // Cardinal directions
                       ...[
                         _CompassLabel('N', const Offset(0, -120)),
                         _CompassLabel('S', const Offset(0, 120)),
                         _CompassLabel('E', const Offset(120, 0)),
                         _CompassLabel('W', const Offset(-120, 0)),
                       ],
-                      // Kaaba icon at center
                       Container(
                         width: 42,
                         height: 42,
@@ -2720,7 +2981,6 @@ class _QiblaScreenState extends State<QiblaScreen>
                               Text('🕋', style: const TextStyle(fontSize: 20)),
                         ),
                       ),
-                      // Rotating arrow — points to Qibla
                       Transform.rotate(
                         angle: arrowAngle,
                         child: Column(
@@ -2736,7 +2996,6 @@ class _QiblaScreenState extends State<QiblaScreen>
                   ),
                 ),
                 const SizedBox(height: 24),
-                // Info card
                 Container(
                   padding: const EdgeInsets.all(16),
                   decoration: BoxDecoration(
@@ -2865,6 +3124,8 @@ class _InfoRow extends StatelessWidget {
 
 // ─────────────────────────────────────────────
 //  GÜNLÜK EKRAN
+//  ✦ Native reklam içerik kartları arasında —
+//    içerikle uyumlu, doğal görünüm.
 // ─────────────────────────────────────────────
 class DailyScreen extends StatefulWidget {
   const DailyScreen({super.key});
@@ -2927,6 +3188,11 @@ class _DailyScreenState extends State<DailyScreen> {
             ),
           ),
           const SizedBox(height: 12),
+
+          // ✦ Native reklam — Ayet kartı ile Hadis kartı arasında.
+          //   İçerikle uyumlu, göze batmayan bir konum.
+          const NativeAdCard(),
+
           // Günün Hadisi
           _DailyCard(
             tag: '📜 ${L.dailyHadith}',
@@ -2949,6 +3215,7 @@ class _DailyScreenState extends State<DailyScreen> {
             ),
           ),
           const SizedBox(height: 12),
+
           // Tavsiye Zikir
           _DailyCard(
             tag: '📿 ${L.dailyDhikr}',
@@ -2984,7 +3251,8 @@ class _DailyScreenState extends State<DailyScreen> {
             ),
           ),
           const SizedBox(height: 12),
-          // Esmaül Hüsna of the day
+
+          // Esmaül Hüsna
           _DailyCard(
             tag: '✨ ${L.lang == AppLang.en ? 'Name of the Day' : 'Günün İsmi'}',
             tagColor: const Color(0xFFE67E22),
@@ -3248,6 +3516,9 @@ class _DuaScreenState extends State<DuaScreen> {
 
 // ─────────────────────────────────────────────
 //  ZİKİR EKRANI
+//  ✦ Hedefe ulaşınca ödüllü reklam teklif edilir —
+//    isteğe bağlı, zorlamaz; "Ödül kazan" butonu
+//    ile kullanıcı kendi seçer.
 // ─────────────────────────────────────────────
 class ZikirScreen extends StatefulWidget {
   const ZikirScreen({super.key});
@@ -3264,6 +3535,7 @@ class _ZikirScreenState extends State<ZikirScreen>
   List<Map<String, dynamic>> _history = [];
   late AnimationController _bounce;
   late Animation<double> _scale;
+  bool _targetReachedThisSession = false;
 
   @override
   void initState() {
@@ -3289,6 +3561,7 @@ class _ZikirScreenState extends State<ZikirScreen>
     final hist = p.getStringList('zikir_history') ?? [];
     setState(() {
       _count = cnt;
+      _targetReachedThisSession = false;
       _history = hist.map((e) {
         final parts = e.split('|');
         return {
@@ -3313,22 +3586,89 @@ class _ZikirScreenState extends State<ZikirScreen>
       if (hasVib) Vibration.vibrate(duration: 30, amplitude: 60);
     } catch (_) {}
     await _save();
-    if (_target > 0 && _count == _target) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(L.lang == AppLang.en
-                ? 'Target reached! Masha\'Allah!'
-                : 'Hedefe ulaştınız! Maşallah!'),
-            backgroundColor: Theme.of(context).colorScheme.secondary,
-          ),
-        );
-      }
+
+    if (_target > 0 && _count == _target && !_targetReachedThisSession) {
+      _targetReachedThisSession = true;
+      if (mounted) _showTargetReachedDialog();
     }
   }
 
+  /// Hedefe ulaşıldığında gösterilen diyalog.
+  /// Kullanıcı isterse ödüllü reklam izleyebilir,
+  /// istemezse "Hayır" ile geçer — hiçbir zorlama yok.
+  void _showTargetReachedDialog() {
+    final gold = Theme.of(context).colorScheme.primary;
+    final teal = Theme.of(context).colorScheme.secondary;
+
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: Row(
+          children: [
+            Text('🎉 ', style: const TextStyle(fontSize: 24)),
+            Text(
+              L.lang == AppLang.en ? 'Target Reached!' : 'Hedefe Ulaştınız!',
+              style: TextStyle(
+                  color: gold, fontSize: 18, fontWeight: FontWeight.w700),
+            ),
+          ],
+        ),
+        content: Text(
+          L.lang == AppLang.en
+              ? 'MashaAllah! Would you like to watch a short video to support us?'
+              : 'Maşallah! Bizi desteklemek için kısa bir video izlemek ister misiniz?',
+          style: const TextStyle(fontSize: 14, height: 1.6),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: Text(
+              L.lang == AppLang.en ? 'No thanks' : 'Hayır',
+              style: TextStyle(color: Colors.grey.shade500),
+            ),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: gold,
+              foregroundColor: const Color(0xFF0D1117),
+              shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12)),
+            ),
+            onPressed: () {
+              Navigator.pop(ctx);
+              AdManager().showRewarded(
+                onRewarded: () {
+                  if (mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                      content: Text(L.lang == AppLang.en
+                          ? 'JazakAllah Khair! Thank you!'
+                          : 'Cezakellah! Desteğin için teşekkürler!'),
+                      backgroundColor: teal,
+                    ));
+                  }
+                },
+              );
+            },
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Icon(Icons.play_circle_outline, size: 16),
+                const SizedBox(width: 6),
+                Text(L.lang == AppLang.en ? 'Watch Video' : 'Video İzle'),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   Future<void> _reset() async {
-    setState(() => _count = 0);
+    setState(() {
+      _count = 0;
+      _targetReachedThisSession = false;
+    });
     await _save();
   }
 
@@ -3370,7 +3710,6 @@ class _ZikirScreenState extends State<ZikirScreen>
       ),
       body: Column(
         children: [
-          // Zikir selector
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
             child: SingleChildScrollView(
@@ -3407,7 +3746,6 @@ class _ZikirScreenState extends State<ZikirScreen>
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  // Arabic text
                   Text(
                     d['ar']!,
                     style: GoogleFonts.notoNaskhArabic(
@@ -3422,7 +3760,6 @@ class _ZikirScreenState extends State<ZikirScreen>
                         color: isDark ? Colors.white54 : Colors.black45),
                   ),
                   const SizedBox(height: 32),
-                  // Count
                   Text(
                     '$_count',
                     style: TextStyle(
@@ -3433,7 +3770,6 @@ class _ZikirScreenState extends State<ZikirScreen>
                     ),
                   ),
                   const SizedBox(height: 8),
-                  // Progress
                   if (_target > 0) ...[
                     Padding(
                       padding: const EdgeInsets.symmetric(horizontal: 40),
@@ -3457,7 +3793,6 @@ class _ZikirScreenState extends State<ZikirScreen>
                     ),
                   ],
                   const SizedBox(height: 32),
-                  // Main tap button
                   ScaleTransition(
                     scale: _scale,
                     child: GestureDetector(
@@ -3500,13 +3835,11 @@ class _ZikirScreenState extends State<ZikirScreen>
                     ),
                   ),
                   const SizedBox(height: 24),
-                  // Controls
                   Padding(
                     padding: const EdgeInsets.symmetric(horizontal: 24),
                     child: Row(
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [
-                        // Target selector
                         DropdownButton<int>(
                           value: _target,
                           underline: const SizedBox(),
@@ -3616,6 +3949,8 @@ class _ZikirHistory extends StatelessWidget {
 
 // ─────────────────────────────────────────────
 //  AYARLAR
+//  ✦ Banner reklam altta — kullanıcı ayar
+//    yaparken içeriği tam görebilir.
 // ─────────────────────────────────────────────
 class SettingsScreen extends StatelessWidget {
   const SettingsScreen({super.key});
@@ -3628,6 +3963,8 @@ class SettingsScreen extends StatelessWidget {
 
     return Scaffold(
       appBar: AppBar(title: Text(L.settings)),
+      // ✦ Banner Ayarlar sayfasında da altta — zararsız, doğal
+      bottomNavigationBar: const AdBannerWidget(size: AdSize.banner),
       body: ListView(
         padding: const EdgeInsets.all(14),
         children: [
@@ -3846,7 +4183,6 @@ Widget _errorCenter(String msg, VoidCallback retry) => Center(
       ),
     );
 
-// Extension
 extension IterableExt<T> on Iterable<T> {
   T? elementAtOrNull(int index) {
     if (index < 0) return null;
