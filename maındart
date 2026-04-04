@@ -1,37 +1,3 @@
-// ============================================================
-//  PRO KUR'AN-I KERİM  –  Tek Dosya Flutter Uygulaması
-//  Tüm hatalar düzeltildi: Kıble, Dualar, Mushaf, Namaz, API
-//  Global dil desteği: Türkçe / English / Arabî
-// ============================================================
-//
-//  pubspec.yaml bağımlılıkları:
-//    dependencies:
-//      flutter:
-//        sdk: flutter
-//      google_fonts: ^6.2.1
-//      http: ^1.2.1
-//      just_audio: ^0.9.40
-//      audio_session: ^0.1.21
-//      shared_preferences: ^2.3.2
-//      geolocator: ^12.0.0
-//      geocoding: ^3.0.0
-//      sensors_plus: ^5.0.1
-//      vibration: ^2.0.0
-//      share_plus: ^10.0.2
-//      url_launcher: ^6.3.0
-//      flutter_compass: ^0.8.0
-//
-//  AndroidManifest.xml izinleri:
-//    <uses-permission android:name="android.permission.INTERNET"/>
-//    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION"/>
-//    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION"/>
-//    <uses-permission android:name="android.permission.VIBRATE"/>
-//
-//  iOS Info.plist:
-//    NSLocationWhenInUseUsageDescription
-//    NSMotionUsageDescription
-// ============================================================
-
 import 'dart:async';
 import 'dart:convert';
 import 'dart:math' as math;
@@ -2122,7 +2088,8 @@ class PrayerTimesScreen extends StatefulWidget {
 class _PrayerTimesScreenState extends State<PrayerTimesScreen> {
   Map<String, String>? _timings;
   Map<String, String>? _hijriDate;
-  String _city = '';
+  String _locationInfo =
+      ''; // Örnek: "Ankara, Türkiye" veya "London, United Kingdom"
   bool _loading = true;
   String _error = '';
   String _nextPrayer = '';
@@ -2180,41 +2147,78 @@ class _PrayerTimesScreenState extends State<PrayerTimesScreen> {
   }
 
   Future<void> _fetch() async {
-    if (mounted)
+    if (mounted) {
       setState(() {
         _loading = true;
         _error = '';
+        _locationInfo = '';
       });
+    }
+
     try {
+      // Konum izni
       var perm = await Geolocator.checkPermission();
       if (perm == LocationPermission.denied) {
         perm = await Geolocator.requestPermission();
       }
       if (perm == LocationPermission.denied ||
           perm == LocationPermission.deniedForever) {
-        throw Exception(L.locationPermDenied);
+        throw Exception(L.locationPermDenied ?? 'Konum izni reddedildi');
       }
 
+      // Konum al
       final pos = await Geolocator.getCurrentPosition(
-          desiredAccuracy: LocationAccuracy.medium);
+        desiredAccuracy: LocationAccuracy.medium,
+      );
 
-      // Reverse geocode
+      // ==================== GLOBAL KONUM BİLGİSİ (Şehir + Ülke) ====================
+      String city = '';
+      String country = '';
       try {
-        final places =
-            await placemarkFromCoordinates(pos.latitude, pos.longitude);
-        if (places.isNotEmpty) {
-          _city =
-              places.first.locality ?? places.first.subAdministrativeArea ?? '';
-        }
-      } catch (_) {}
+        final places = await placemarkFromCoordinates(
+          pos.latitude,
+          pos.longitude,
+        );
 
-      // aladhan.com — method 13 = Diyanet İşleri Başkanlığı (Turkey)
-      final ts = DateTime.now().millisecondsSinceEpoch ~/ 1000;
-      final url =
-          'https://api.aladhan.com/v1/timings/$ts?latitude=${pos.latitude}&longitude=${pos.longitude}&method=13';
+        if (places.isNotEmpty) {
+          final p = places.first;
+          city = (p.locality ??
+                  p.subAdministrativeArea ??
+                  p.administrativeArea ??
+                  p.subLocality ??
+                  '')
+              .trim();
+          country = (p.country ?? '').trim();
+
+          // Fallback'ler
+          if (city.isEmpty && p.thoroughfare != null)
+            city = p.thoroughfare!.trim();
+          if (country.isEmpty) country = 'Unknown';
+        }
+      } catch (e) {
+        debugPrint('Reverse geocoding error: $e');
+      }
+
+      // Güzel konum gösterimi
+      _locationInfo = city.isNotEmpty
+          ? (country.isNotEmpty ? '$city, $country' : city)
+          : 'Konum tespit ediliyor...';
+
+      // ==================== NAMAZ VAKİTLERİ - GLOBAL (Koordinat + Method 5) ====================
+      final now = DateTime.now();
+      final ts = now.millisecondsSinceEpoch ~/ 1000;
+
+      // Method 5 = Muslim World League (dünya genelinde en yaygın kullanılan)
+      final url = 'https://api.aladhan.com/v1/timings/$ts'
+          '?latitude=${pos.latitude}&longitude=${pos.longitude}&method=5';
+
       final r =
-          await http.get(Uri.parse(url)).timeout(const Duration(seconds: 20));
-      if (r.statusCode != 200) throw Exception('HTTP ${r.statusCode}');
+          await http.get(Uri.parse(url)).timeout(const Duration(seconds: 25));
+
+      if (r.statusCode != 200) {
+        throw Exception('API bağlantı hatası (${r.statusCode})');
+      }
+
       final data = jsonDecode(r.body)['data'];
       final timings = Map<String, String>.from(data['timings'] as Map);
       final hijri = data['date']['hijri'] as Map;
@@ -2229,48 +2233,80 @@ class _PrayerTimesScreenState extends State<PrayerTimesScreen> {
           };
           _loading = false;
         });
-        _computeNext();
-        _timer =
-            Timer.periodic(const Duration(seconds: 1), (_) => _computeNext());
+
+        _computeNextPrayer();
+        _timer?.cancel();
+        _timer = Timer.periodic(
+          const Duration(seconds: 10),
+          (_) => _computeNextPrayer(),
+        );
       }
     } catch (e) {
-      if (mounted)
+      if (mounted) {
         setState(() {
           _loading = false;
-          _error = e.toString();
+          _error = e.toString().replaceAll('Exception: ', '');
         });
+      }
     }
   }
 
-  void _computeNext() {
-    if (_timings == null) return;
-    final now = TimeOfDay.now();
+  void _computeNextPrayer() {
+    if (_timings == null || !mounted) return;
+
+    final now = DateTime.now();
+    final currentMinutes = now.hour * 60 + now.minute;
     final mainPrayers = ['Fajr', 'Dhuhr', 'Asr', 'Maghrib', 'Isha'];
+
+    String? nextKey;
+    int? nextMinutes;
+
     for (final key in mainPrayers) {
-      final t = _timings![key];
-      if (t == null) continue;
-      final parts = t.split(':');
+      final timeStr = _timings![key];
+      if (timeStr == null) continue;
+
+      final parts = timeStr.split(':');
       final h = int.tryParse(parts[0]) ?? 0;
-      final m = int.tryParse(parts[1].split(' ')[0]) ?? 0;
-      final pMinutes = h * 60 + m;
-      final nowMinutes = now.hour * 60 + now.minute;
-      if (pMinutes > nowMinutes) {
-        final rem = pMinutes - nowMinutes;
-        if (mounted) {
-          setState(() {
-            _nextPrayer = key;
-            _remaining = Duration(minutes: rem);
-          });
-        }
-        return;
+      final m = int.tryParse(parts[1].split(RegExp(r'[^0-9]'))[0]) ?? 0;
+      final prayerMinutes = h * 60 + m;
+
+      if (prayerMinutes > currentMinutes) {
+        nextKey = key;
+        nextMinutes = prayerMinutes;
+        break;
       }
     }
-    // After Isha — next is Fajr
-    if (mounted)
+
+    // Gece yarısından sonra yarınki Fajr
+    if (nextKey == null) {
+      nextKey = 'Fajr';
+      final fajrTime = _timings!['Fajr'];
+      if (fajrTime != null) {
+        final parts = fajrTime.split(':');
+        final h = int.tryParse(parts[0]) ?? 0;
+        final m = int.tryParse(parts[1].split(RegExp(r'[^0-9]'))[0]) ?? 0;
+        nextMinutes = h * 60 + m + (24 * 60);
+      } else {
+        nextMinutes = 24 * 60;
+      }
+    }
+
+    if (nextMinutes != null && nextKey != null) {
+      int remainingMinutes = nextMinutes - currentMinutes;
+      if (remainingMinutes < 0) remainingMinutes += 24 * 60;
+
       setState(() {
-        _nextPrayer = 'Fajr';
-        _remaining = Duration.zero;
+        _nextPrayer = nextKey!;
+        _remaining = Duration(minutes: remainingMinutes);
       });
+    }
+  }
+
+  String _formatRemaining() {
+    if (_remaining.inMinutes <= 0) return '0 dk';
+    final hours = _remaining.inHours;
+    final minutes = _remaining.inMinutes % 60;
+    return hours > 0 ? '$hours s $minutes dk' : '$minutes dk';
   }
 
   @override
@@ -2295,7 +2331,7 @@ class _PrayerTimesScreenState extends State<PrayerTimesScreen> {
                   child: ListView(
                     padding: const EdgeInsets.all(14),
                     children: [
-                      // Location + Hijri date card
+                      // Konum + Hicri + Sıradaki Namaz Kartı
                       Container(
                         padding: const EdgeInsets.all(16),
                         decoration: BoxDecoration(
@@ -2315,17 +2351,20 @@ class _PrayerTimesScreenState extends State<PrayerTimesScreen> {
                         ),
                         child: Column(
                           children: [
-                            if (_city.isNotEmpty) ...[
+                            if (_locationInfo.isNotEmpty) ...[
                               Row(
                                 mainAxisAlignment: MainAxisAlignment.center,
                                 children: [
                                   Icon(Icons.location_on,
                                       color: gold, size: 16),
                                   const SizedBox(width: 4),
-                                  Text(_city,
-                                      style: const TextStyle(
-                                          fontSize: 15,
-                                          fontWeight: FontWeight.w600)),
+                                  Text(
+                                    _locationInfo,
+                                    style: const TextStyle(
+                                      fontSize: 15,
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                                  ),
                                 ],
                               ),
                               const SizedBox(height: 6),
@@ -2334,19 +2373,19 @@ class _PrayerTimesScreenState extends State<PrayerTimesScreen> {
                               Text(
                                 '${_hijriDate!['day']} ${_hijriDate!['month']} ${_hijriDate!['year']} H',
                                 style: TextStyle(
-                                    fontSize: 13,
-                                    color: gold,
-                                    fontWeight: FontWeight.w600),
+                                  fontSize: 13,
+                                  color: gold,
+                                  fontWeight: FontWeight.w600,
+                                ),
                               ),
-                            const SizedBox(height: 12),
-                            // Next prayer countdown
+                            const SizedBox(height: 16),
                             if (_nextPrayer.isNotEmpty)
                               Container(
                                 padding: const EdgeInsets.symmetric(
-                                    horizontal: 16, vertical: 10),
+                                    horizontal: 16, vertical: 12),
                                 decoration: BoxDecoration(
                                   color: teal.withOpacity(0.12),
-                                  borderRadius: BorderRadius.circular(10),
+                                  borderRadius: BorderRadius.circular(12),
                                   border:
                                       Border.all(color: teal.withOpacity(0.3)),
                                 ),
@@ -2357,16 +2396,18 @@ class _PrayerTimesScreenState extends State<PrayerTimesScreen> {
                                     Text(
                                       '${L.nextPrayer}: ${_prayerName(_nextPrayer)}',
                                       style: TextStyle(
-                                          color: teal,
-                                          fontWeight: FontWeight.w700,
-                                          fontSize: 14),
+                                        color: teal,
+                                        fontWeight: FontWeight.w700,
+                                        fontSize: 15,
+                                      ),
                                     ),
                                     Text(
-                                      '${_remaining.inHours}s ${_remaining.inMinutes % 60}dk',
+                                      _formatRemaining(),
                                       style: TextStyle(
-                                          color: teal,
-                                          fontWeight: FontWeight.w700,
-                                          fontSize: 14),
+                                        color: teal,
+                                        fontWeight: FontWeight.w700,
+                                        fontSize: 15,
+                                      ),
                                     ),
                                   ],
                                 ),
@@ -2375,19 +2416,22 @@ class _PrayerTimesScreenState extends State<PrayerTimesScreen> {
                         ),
                       ),
                       const SizedBox(height: 14),
-                      // Prayer time cards
+
+                      // Namaz Vakitleri Grid
                       GridView.count(
                         crossAxisCount: 2,
                         shrinkWrap: true,
                         physics: const NeverScrollableScrollPhysics(),
                         crossAxisSpacing: 10,
                         mainAxisSpacing: 10,
-                        childAspectRatio: 1.7,
+                        childAspectRatio: 1.75,
                         children: _prayerKeys
                             .where((k) => _timings?.containsKey(k) == true)
                             .map((k) => _PrayerCard(
                                   name: _prayerName(k),
-                                  time: _timings![k]!,
+                                  time: _timings![k]!.length > 5
+                                      ? _timings![k]!.substring(0, 5)
+                                      : _timings![k]!,
                                   isNext: k == _nextPrayer,
                                 ))
                             .toList(),
@@ -2404,13 +2448,18 @@ class _PrayerCard extends StatelessWidget {
   final String time;
   final bool isNext;
 
-  const _PrayerCard(
-      {required this.name, required this.time, required this.isNext});
+  const _PrayerCard({
+    super.key,
+    required this.name,
+    required this.time,
+    required this.isNext,
+  });
 
   @override
   Widget build(BuildContext context) {
     final gold = Theme.of(context).colorScheme.primary;
     final isDark = Theme.of(context).brightness == Brightness.dark;
+
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
       decoration: BoxDecoration(
@@ -2424,29 +2473,36 @@ class _PrayerCard extends StatelessWidget {
               : (isDark
                   ? Colors.white.withOpacity(0.07)
                   : Colors.black.withOpacity(0.07)),
-          width: isNext ? 1.5 : 0.5,
+          width: isNext ? 1.8 : 0.6,
         ),
       ),
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Text(name,
-              style: TextStyle(
-                  fontSize: 12,
-                  color: isNext ? gold : null,
-                  fontWeight: isNext ? FontWeight.w700 : FontWeight.w500)),
-          const SizedBox(height: 6),
           Text(
-            time.length > 5 ? time.substring(0, 5) : time,
+            name,
             style: TextStyle(
-                fontSize: 22,
-                fontWeight: FontWeight.w700,
-                color: isNext ? gold : null),
+              fontSize: 13,
+              color: isNext ? gold : null,
+              fontWeight: isNext ? FontWeight.w700 : FontWeight.w500,
+            ),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            time,
+            style: TextStyle(
+              fontSize: 23,
+              fontWeight: FontWeight.w700,
+              color: isNext ? gold : null,
+            ),
           ),
           if (isNext)
-            Text(
-              '← Sıradaki',
-              style: TextStyle(fontSize: 9, color: gold),
+            const Padding(
+              padding: EdgeInsets.only(top: 4),
+              child: Text(
+                '← Sıradaki',
+                style: TextStyle(fontSize: 9.5, color: Colors.orangeAccent),
+              ),
             ),
         ],
       ),
