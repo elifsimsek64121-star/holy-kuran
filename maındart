@@ -1,190 +1,612 @@
+// ============================================================
+//  PRO KUR'AN-I KERİM  –  Tek Dosya Flutter Uygulaması
+//  Tüm hatalar düzeltildi: Kıble, Dualar, Mushaf, Namaz, API
+//  Global dil desteği: Türkçe / English / Arabî
+// ============================================================
+//
+//  pubspec.yaml bağımlılıkları:
+//    dependencies:
+//      flutter:
+//        sdk: flutter
+//      google_fonts: ^6.2.1
+//      http: ^1.2.1
+//      just_audio: ^0.9.40
+//      audio_session: ^0.1.21
+//      shared_preferences: ^2.3.2
+//      geolocator: ^12.0.0
+//      geocoding: ^3.0.0
+//      sensors_plus: ^5.0.1
+//      vibration: ^2.0.0
+//      share_plus: ^10.0.2
+//      url_launcher: ^6.3.0
+//      flutter_compass: ^0.8.0
+//
+//  AndroidManifest.xml izinleri:
+//    <uses-permission android:name="android.permission.INTERNET"/>
+//    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION"/>
+//    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION"/>
+//    <uses-permission android:name="android.permission.VIBRATE"/>
+//
+//  iOS Info.plist:
+//    NSLocationWhenInUseUsageDescription
+//    NSMotionUsageDescription
+// ============================================================
+
 import 'dart:async';
 import 'dart:convert';
-import 'dart:io';
 import 'dart:math' as math;
 
 import 'package:audio_session/audio_session.dart';
-import 'package:collection/collection.dart';
-import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:flutter_compass/flutter_compass.dart';
+import 'package:geocoding/geocoding.dart';
+import 'package:geolocator/geolocator.dart';
 import 'package:google_fonts/google_fonts.dart';
-import 'package:hive/hive.dart';
-import 'package:hive_flutter/hive_flutter.dart';
 import 'package:http/http.dart' as http;
 import 'package:just_audio/just_audio.dart';
-import 'package:path_provider/path_provider.dart';
-import 'package:shared_preferences/shared_preferences.dart';
-import 'package:geolocator/geolocator.dart';
-import 'package:geocoding/geocoding.dart';
-import 'package:sensors_plus/sensors_plus.dart';
-import 'package:vibration/vibration.dart';
 import 'package:share_plus/share_plus.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'package:vibration/vibration.dart';
 
-// =============================================================================
-// SABİTLER ve GLOBAL DEĞİŞKENLER
-// =============================================================================
+// ─────────────────────────────────────────────
+//  DİL / LOCALISATION
+// ─────────────────────────────────────────────
+enum AppLang { tr, en, ar }
 
-final Map<String, Map<String, String>> reciters = {
-  'ar.alafasy': {'name': 'Mişari Raşid el-Afasî', 'style': 'Duygusal & Güzel'},
-  'ar.maher': {'name': 'Maher el-Muaykılî', 'style': 'Sakin & Melodik'},
-  'ar.minshawi': {'name': 'Muhammed Siddik el-Minsavi', 'style': 'Mücevved'},
-  'ar.husary': {'name': 'Husari Mücevved', 'style': 'Klasik & Güçlü'},
-  'ar.husarym': {'name': 'Husari Murattal', 'style': 'Açık & Yumuşak'},
-  'ar.abdulbasit': {'name': 'Abdulbasit Abdüssamed', 'style': 'Efsanevi'},
-  'ar.ghamadi': {'name': 'Saad el-Gamdi', 'style': 'Huzurlu'},
-};
+class L {
+  static AppLang lang = AppLang.tr;
 
-final Map<String, String> translations = {
-  'en.sahih': 'İngilizce - Sahih International',
-  'tr.diyanet': 'Türkçe - Diyanet İşleri',
-  'tr.suat': 'Türkçe - Suat Yıldırım',
-};
-
-final List<String> juzNames = List.generate(30, (index) => 'Cüz ${index + 1}');
-
-// Global sure isimleri listesi
-final List<Map<String, dynamic>> surahNames = [];
-
-Future<void> _loadSurahNames() async {
-  if (surahNames.isNotEmpty) return;
-
-  try {
-    final response = await http
-        .get(Uri.parse('https://api.alquran.cloud/v1/meta'))
-        .timeout(const Duration(seconds: 12));
-
-    if (response.statusCode == 200) {
-      final jsonData = jsonDecode(response.body) as Map<String, dynamic>;
-
-      if (jsonData['data'] is Map<String, dynamic> &&
-          jsonData['data']['surahs'] is Map<String, dynamic> &&
-          jsonData['data']['surahs']['references'] is List) {
-        
-        final references = jsonData['data']['surahs']['references'] as List<dynamic>;
-        
-        surahNames.clear();
-        surahNames.addAll(
-          references.map((item) => Map<String, dynamic>.from(item as Map)).toList(),
-        );
-        
-        debugPrint('Sure isimleri yüklendi: ${surahNames.length} adet');
-      } else {
-        debugPrint('API yanıt formatı beklenmedik');
-      }
-    } else {
-      debugPrint('Meta API durumu: ${response.statusCode}');
+  static String t(String tr, String en, String ar) {
+    switch (lang) {
+      case AppLang.en:
+        return en;
+      case AppLang.ar:
+        return ar;
+      default:
+        return tr;
     }
-  } catch (e, stack) {
-    debugPrint('Sure isimleri yüklenemedi: $e');
-    debugPrint('Stack: $stack');
   }
+
+  // Nav
+  static String get quran => t('Kur\'an', 'Quran', 'القرآن');
+  static String get prayer => t('Namaz', 'Prayer', 'الصلاة');
+  static String get qibla => t('Kıble', 'Qibla', 'القبلة');
+  static String get daily => t('Günlük', 'Daily', 'يومي');
+  static String get duas => t('Dualar', 'Duas', 'الأدعية');
+  static String get dhikr => t('Zikir', 'Dhikr', 'الذكر');
+  static String get settings => t('Ayarlar', 'Settings', 'الإعدادات');
+
+  // Quran
+  static String get surahList => t('Sure Listesi', 'Surah List', 'قائمة السور');
+  static String get mushaf => t('Mushaf', 'Mushaf', 'المصحف');
+  static String get audio => t('Sesli', 'Audio', 'صوتي');
+  static String get searchSurah =>
+      t('Sure ara...', 'Search surah...', 'ابحث عن سورة...');
+  static String get meccan => t('Mekki', 'Meccan', 'مكية');
+  static String get medinan => t('Medeni', 'Medinan', 'مدنية');
+  static String get verse => t('Ayet', 'Verse', 'آية');
+  static String get verses => t('ayet', 'verses', 'آيات');
+  static String get loading =>
+      t('Yükleniyor...', 'Loading...', 'جار التحميل...');
+  static String get continueReading =>
+      t('Kaldığın yerden devam et', 'Continue reading', 'استمر في القراءة');
+  static String get bookmarked => t('Yer imi', 'Bookmarked', 'إشارة مرجعية');
+  static String get share => t('Paylaş', 'Share', 'مشاركة');
+  static String get copy => t('Kopyala', 'Copy', 'نسخ');
+  static String get copied => t('Kopyalandı!', 'Copied!', 'تم النسخ!');
+
+  // Prayer
+  static String get prayerTimes =>
+      t('Namaz Vakitleri', 'Prayer Times', 'مواقيت الصلاة');
+  static String get nextPrayer =>
+      t('Sıradaki Namaz', 'Next Prayer', 'الصلاة القادمة');
+  static String get locationPermDenied => t(
+      'Konum izni reddedildi. Ayarlardan izin verin.',
+      'Location permission denied. Please enable it in settings.',
+      'تم رفض إذن الموقع.');
+
+  // Qibla
+  static String get qiblaFinder =>
+      t('Kıble Bulucu', 'Qibla Finder', 'محدد القبلة');
+  static String get calibrate => t(
+      'Cihazı 8 şeklinde döndürerek kalibre edin',
+      'Calibrate by moving device in figure-8',
+      'قم بمعايرة الجهاز بتحريكه بشكل 8');
+  static String get qiblaDir =>
+      t('Kabe\'ye Yön', 'Direction to Kaaba', 'اتجاه الكعبة');
+  static String get deviceHeading =>
+      t('Cihaz Yönü', 'Device Heading', 'اتجاه الجهاز');
+
+  // Zikir
+  static String get target => t('Hedef', 'Target', 'الهدف');
+  static String get reset => t('Sıfırla', 'Reset', 'إعادة تعيين');
+  static String get save => t('Kaydet', 'Save', 'حفظ');
+  static String get history => t('Geçmiş', 'History', 'السجل');
+  static String get noHistory =>
+      t('Henüz kayıt yok', 'No records yet', 'لا سجلات بعد');
+
+  // Daily
+  static String get dailyVerse =>
+      t('Günün Ayeti', 'Verse of the Day', 'آية اليوم');
+  static String get dailyHadith =>
+      t('Günün Hadisi', 'Hadith of the Day', 'حديث اليوم');
+  static String get dailyDhikr =>
+      t('Tavsiye Zikir', 'Recommended Dhikr', 'الذكر الموصى به');
+
+  // Settings
+  static String get language => t('Dil', 'Language', 'اللغة');
+  static String get theme => t('Tema', 'Theme', 'المظهر');
+  static String get dark => t('Koyu', 'Dark', 'داكن');
+  static String get light => t('Açık', 'Light', 'فاتح');
+  static String get reciter => t('Kari', 'Reciter', 'القارئ');
+  static String get translation => t('Meal/Çeviri', 'Translation', 'الترجمة');
+  static String get appTitle =>
+      t('Kur\'an-ı Kerim', 'Holy Quran', 'القرآن الكريم');
 }
 
+// ─────────────────────────────────────────────
+//  SABİTLER
+// ─────────────────────────────────────────────
+const kKaabaLat = 21.4225;
+const kKaabaLon = 39.8262;
+
+const Map<String, Map<String, String>> kReciters = {
+  'ar.alafasy': {'name': 'Mişari Raşid el-Afasî', 'style': 'Murattal'},
+  'ar.maher': {'name': 'Maher el-Muaykılî', 'style': 'Murattal'},
+  'ar.minshawi': {'name': 'Minsavî', 'style': 'Mücevved'},
+  'ar.husary': {'name': 'Husarî', 'style': 'Mücevved'},
+  'ar.abdulbasit': {'name': 'Abdülbasit Abdüssamed', 'style': 'Mücevved'},
+  'ar.ghamadi': {'name': 'Saad el-Gamedî', 'style': 'Murattal'},
+};
+
+const Map<String, String> kTranslations = {
+  'tr.diyanet': 'Türkçe – Diyanet İşleri',
+  'tr.suat': 'Türkçe – Suat Yıldırım',
+  'en.sahih': 'English – Sahih International',
+  'en.asad': 'English – Muhammad Asad',
+  'ar.muyassar': 'العربية – الميسر',
+};
+
+// MP3 CDN: everyayah.com — 128kbps, reliable
+String ayahAudioUrl(int surahNum, int ayahNum,
+    {String reciter = 'Alafasy_128kbps'}) {
+  final s = surahNum.toString().padLeft(3, '0');
+  final a = ayahNum.toString().padLeft(3, '0');
+  return 'https://everyayah.com/data/$reciter/$s$a.mp3';
+}
+
+// Full surah audio — mp3quran.net
+String surahAudioUrl(int surahNum, {String folder = 'afs'}) {
+  final s = surahNum.toString().padLeft(3, '0');
+  return 'https://server8.mp3quran.net/$folder/$s.mp3';
+}
+
+// ─────────────────────────────────────────────
+//  GÜNLÜK VERİLER (offline fallback)
+// ─────────────────────────────────────────────
+const List<Map<String, String>> kDailyVerses = [
+  {
+    'ar': 'وَمَن يَتَّقِ اللَّهَ يَجْعَل لَّهُ مَخْرَجًا',
+    'tr': 'Kim Allah\'tan korkarsa Allah ona bir çıkış yolu açar.',
+    'en': 'Whoever fears Allah – He will make for him a way out.',
+    'ref': 'Talak 65:2',
+  },
+  {
+    'ar': 'إِنَّ مَعَ الْعُسْرِ يُسْرًا',
+    'tr': 'Şüphesiz her güçlüğün yanında bir kolaylık vardır.',
+    'en': 'Indeed, with hardship will be ease.',
+    'ref': 'İnşirah 94:6',
+  },
+  {
+    'ar': 'وَإِذَا سَأَلَكَ عِبَادِي عَنِّي فَإِنِّي قَرِيبٌ',
+    'tr': 'Kullarım beni sorarlarsa, ben çok yakınım.',
+    'en': 'When My servants ask about Me, I am near.',
+    'ref': 'Bakara 2:186',
+  },
+  {
+    'ar': 'حَسْبُنَا اللَّهُ وَنِعْمَ الْوَكِيلُ',
+    'tr': 'Allah bize yeter; O ne güzel vekildir.',
+    'en': 'Allah is sufficient for us, and He is the best Disposer of affairs.',
+    'ref': 'Ali İmran 3:173',
+  },
+  {
+    'ar': 'رَبَّنَا آتِنَا فِي الدُّنْيَا حَسَنَةً وَفِي الْآخِرَةِ حَسَنَةً',
+    'tr': 'Rabbimiz! Bize dünyada da ahirette de iyilik ver.',
+    'en': 'Our Lord, give us good in this world and good in the Hereafter.',
+    'ref': 'Bakara 2:201',
+  },
+  {
+    'ar': 'وَعَسَىٰ أَن تَكْرَهُوا شَيْئًا وَهُوَ خَيْرٌ لَّكُمْ',
+    'tr': 'Olur ki bir şeyden hoşlanmazsınız, oysa o sizin için hayırlıdır.',
+    'en': 'Perhaps you hate a thing and it is good for you.',
+    'ref': 'Bakara 2:216',
+  },
+  {
+    'ar': 'إِنَّ اللَّهَ مَعَ الصَّابِرِينَ',
+    'tr': 'Şüphesiz Allah sabredenlerle beraberdir.',
+    'en': 'Indeed, Allah is with the patient.',
+    'ref': 'Bakara 2:153',
+  },
+];
+
+const List<Map<String, String>> kHadiths = [
+  {
+    'tr': 'İnsanların en hayırlısı insanlara en faydalı olandır.',
+    'en': 'The best of people are those most beneficial to people.',
+    'src': 'Taberânî',
+  },
+  {
+    'tr':
+        'Müslüman, dilinden ve elinden diğer Müslümanların güvende olduğu kişidir.',
+    'en': 'A Muslim is one from whose tongue and hand Muslims are safe.',
+    'src': 'Buhârî',
+  },
+  {
+    'tr':
+        'Amellerin Allah\'a en sevimli olanı, az da olsa devamlı yapılanıdır.',
+    'en':
+        'The most beloved deeds to Allah are the most regular, even if small.',
+    'src': 'Buhârî & Müslim',
+  },
+  {
+    'tr':
+        'Güçlü olan güreşte galip gelen değil, öfke anında kendine hakim olandır.',
+    'en':
+        'The strong one is not the wrestler, but the one who controls himself in anger.',
+    'src': 'Buhârî',
+  },
+  {
+    'tr': 'Kolaylaştırın, zorlaştırmayın; müjdeleyin, nefret ettirmeyin.',
+    'en':
+        'Make things easy, do not make them difficult; give glad tidings, do not drive away.',
+    'src': 'Buhârî',
+  },
+  {
+    'tr': 'Güzel ahlak en ağır ameldir.',
+    'en': 'Good character is the heaviest thing on the scale of deeds.',
+    'src': 'Tirmizî',
+  },
+  {
+    'tr':
+        'Bir kimse din kardeşinin ihtiyacını giderirse Allah da onun ihtiyacını giderir.',
+    'en': 'Whoever fulfills the need of his brother, Allah fulfills his needs.',
+    'src': 'Buhârî',
+  },
+];
+
+const List<Map<String, String>> kDuas = [
+  {
+    'title_tr': 'Sabah Duası',
+    'title_en': 'Morning Supplication',
+    'ar':
+        'اللَّهُمَّ بِكَ أَصْبَحْنَا وَبِكَ أَمْسَيْنَا وَبِكَ نَحْيَا وَبِكَ نَمُوتُ وَإِلَيْكَ النُّشُورُ',
+    'tr':
+        'Allah\'ım! Seninle sabahladık, seninle akşamladık, seninle yaşar ve seninle ölürüz. Dönüş de yalnız sanadır.',
+    'en':
+        'O Allah, by You we enter the morning, by You we enter the evening, by You we live, by You we die, and to You is the resurrection.',
+    'src': 'Tirmizî 3391',
+  },
+  {
+    'title_tr': 'Akşam Duası',
+    'title_en': 'Evening Supplication',
+    'ar':
+        'اللَّهُمَّ بِكَ أَمْسَيْنَا وَبِكَ أَصْبَحْنَا وَبِكَ نَحْيَا وَبِكَ نَمُوتُ وَإِلَيْكَ الْمَصِيرُ',
+    'tr':
+        'Allah\'ım! Seninle akşamladık, seninle sabahladık, seninle yaşar ve seninle ölürüz. Dönüş de yalnız sanadır.',
+    'en':
+        'O Allah, by You we enter the evening, by You we enter the morning, by You we live, by You we die, and to You is the return.',
+    'src': 'Tirmizî 3391',
+  },
+  {
+    'title_tr': 'Uyku Duası',
+    'title_en': 'Sleep Supplication',
+    'ar': 'بِاسْمِكَ اللّٰهُمَّ أَمُوتُ وَأَحْيَا',
+    'tr': 'Allah\'ım! Senin adınla ölür ve dirilirm.',
+    'en': 'In Your name, O Allah, I die and I live.',
+    'src': 'Buhârî 6324',
+  },
+  {
+    'title_tr': 'Uyanma Duası',
+    'title_en': 'Waking Supplication',
+    'ar':
+        'الْحَمْدُ لِلَّهِ الَّذِي أَحْيَانَا بَعْدَ مَا أَمَاتَنَا وَإِلَيْهِ النُّشُورُ',
+    'tr': 'Bizi öldürdükten sonra dirilten Allah\'a hamdolsun. Dönüş O\'nadır.',
+    'en':
+        'All praise is for Allah who gave us life after having taken it from us and unto Him is the resurrection.',
+    'src': 'Buhârî 6325',
+  },
+  {
+    'title_tr': 'Yemek Öncesi',
+    'title_en': 'Before Eating',
+    'ar': 'بِسْمِ اللَّهِ وَعَلَى بَرَكَةِ اللَّهِ',
+    'tr': 'Allah\'ın adıyla ve Allah\'ın bereketi ile başlarım.',
+    'en': 'In the name of Allah and with the blessings of Allah.',
+    'src': 'Ebû Dâvûd 3767',
+  },
+  {
+    'title_tr': 'Yemek Sonrası',
+    'title_en': 'After Eating',
+    'ar':
+        'الْحَمْدُ لِلَّهِ الَّذِي أَطْعَمَنَا وَسَقَانَا وَجَعَلَنَا مُسْلِمِينَ',
+    'tr': 'Bizi doyuran, içiren ve Müslümanlardan kılan Allah\'a hamdolsun.',
+    'en': 'All praise to Allah who fed us, gave us drink, and made us Muslims.',
+    'src': 'Ebû Dâvûd 3850',
+  },
+  {
+    'title_tr': 'Eve Girerken',
+    'title_en': 'Entering Home',
+    'ar':
+        'اللَّهُمَّ إِنِّي أَسْأَلُكَ خَيْرَ الْمَوْلِجِ وَخَيْرَ الْمَخْرَجِ بِسْمِ اللَّهِ وَلَجْنَا وَبِسْمِ اللَّهِ خَرَجْنَا',
+    'tr':
+        'Allah\'ım! Girişin ve çıkışın hayırlısını istiyorum. Allah\'ın adıyla girdik ve Allah\'ın adıyla çıktık.',
+    'en':
+        'O Allah, I ask of you good in entering and good in leaving. In the name of Allah we enter and in the name of Allah we leave.',
+    'src': 'Ebû Dâvûd 5096',
+  },
+  {
+    'title_tr': 'Keder & Üzüntü',
+    'title_en': 'Distress & Grief',
+    'ar':
+        'اللَّهُمَّ إِنِّي أَعُوذُ بِكَ مِنَ الْهَمِّ وَالْحَزَنِ وَالْعَجْزِ وَالْكَسَلِ',
+    'tr': 'Allah\'ım! Tasa, üzüntü, acizlik ve tembellikten sana sığınırım.',
+    'en':
+        'O Allah, I seek refuge in You from worry, grief, incapacity, and laziness.',
+    'src': 'Buhârî 6369',
+  },
+  {
+    'title_tr': 'Şifa Duası',
+    'title_en': 'Supplication for Healing',
+    'ar':
+        'أَذْهِبِ الْبَأْسَ رَبَّ النَّاسِ وَاشْفِ أَنْتَ الشَّافِي لَا شِفَاءَ إِلَّا شِفَاؤُكَ',
+    'tr':
+        'Ey insanların Rabbi! Sıkıntıyı gider, şifa ver; şifa veren yalnız sensin. Senin şifandan başka şifa yoktur.',
+    'en':
+        'Remove the harm, O Lord of mankind, and cure; You are the Healer. There is no cure but Your cure.',
+    'src': 'Buhârî 5743',
+  },
+  {
+    'title_tr': 'İstihare Duası',
+    'title_en': 'Istikhara Supplication',
+    'ar':
+        'اللَّهُمَّ إِنِّي أَسْتَخِيرُكَ بِعِلْمِكَ وَأَسْتَقْدِرُكَ بِقُدْرَتِكَ',
+    'tr':
+        'Allah\'ım! İlminle senden hayır diliyorum, kudretinle senden güç istiyorum.',
+    'en':
+        'O Allah, I seek goodness from You through Your knowledge, and I seek ability through Your power.',
+    'src': 'Buhârî 6382',
+  },
+  {
+    'title_tr': 'Seyahat Duası',
+    'title_en': 'Travel Supplication',
+    'ar':
+        'اللَّهُ أَكْبَرُ، اللَّهُ أَكْبَرُ، اللَّهُ أَكْبَرُ، سُبْحَانَ الَّذِي سَخَّرَ لَنَا هَذَا',
+    'tr':
+        'Allah büyüktür, Allah büyüktür, Allah büyüktür. Bunu bizim için boyun eğdireni tesbih ederim.',
+    'en': 'Allah is Greatest (x3). Glory to Him who has subjected this for us.',
+    'src': 'Müslim 1342',
+  },
+  {
+    'title_tr': 'Abdest Duası',
+    'title_en': 'Wudu Supplication',
+    'ar':
+        'اللَّهُمَّ اجْعَلْنِي مِنَ التَّوَّابِينَ وَاجْعَلْنِي مِنَ الْمُتَطَهِّرِينَ',
+    'tr': 'Allah\'ım! Beni çok tövbe edenlerden ve temizlenenlerden kıl.',
+    'en':
+        'O Allah, make me among the repentant and make me among the purified.',
+    'src': 'Tirmizî 55',
+  },
+];
+
+const Map<String, Map<String, String>> kZikirList = {
+  'subhanallah': {
+    'ar': 'سُبْحَانَ اللَّهِ',
+    'tr': 'Sübhanallah',
+    'en': 'Subhanallah',
+  },
+  'alhamdulillah': {
+    'ar': 'الْحَمْدُ لِلَّهِ',
+    'tr': 'Elhamdülillah',
+    'en': 'Alhamdulillah',
+  },
+  'allahuakbar': {
+    'ar': 'اللهُ أَكْبَرُ',
+    'tr': 'Allahu Ekber',
+    'en': 'Allahu Akbar',
+  },
+  'estagfirullah': {
+    'ar': 'أَسْتَغْفِرُ اللَّهَ',
+    'tr': 'Estağfirullah',
+    'en': 'Astaghfirullah',
+  },
+  'lahavle': {
+    'ar': 'لَا حَوْلَ وَلَا قُوَّةَ إِلَّا بِاللَّهِ',
+    'tr': 'La havle vela kuvvete illa billah',
+    'en': 'La hawla wa la quwwata illa billah',
+  },
+  'salawat': {
+    'ar': 'اللَّهُمَّ صَلِّ عَلَى مُحَمَّدٍ',
+    'tr': 'Allahümme salli ala Muhammed',
+    'en': 'Allahumma salli ala Muhammad',
+  },
+};
+
+// ─────────────────────────────────────────────
+//  MAIN
+// ─────────────────────────────────────────────
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
-
-  await Hive.initFlutter();
-
-  // Sure isimlerini yükle - hata olsa bile devam et
-  try {
-    await _loadSurahNames();
-  } catch (e) {
-    debugPrint('main içinde sure yükleme hatası: $e');
-  }
+  SystemChrome.setPreferredOrientations([DeviceOrientation.portraitUp]);
 
   final prefs = await SharedPreferences.getInstance();
-  final dark = prefs.getBool('darkMode') ?? false;
-  final lang = prefs.getString('language') ?? 'tr';
+  final darkMode = prefs.getBool('dark_mode') ?? true;
+  final langStr = prefs.getString('language') ?? 'tr';
+  final reciter = prefs.getString('reciter') ?? 'ar.alafasy';
+  final translation = prefs.getString('translation') ?? 'tr.diyanet';
 
-  runApp(MyApp(
-    initialDarkMode: dark,
-    initialLanguage: lang,
+  L.lang = AppLang.values.firstWhere(
+    (e) => e.name == langStr,
+    orElse: () => AppLang.tr,
+  );
+
+  runApp(QuranApp(
+    initialDark: darkMode,
+    initialReciter: reciter,
+    initialTranslation: translation,
   ));
 }
 
-class MyApp extends StatefulWidget {
-  final bool initialDarkMode;
-  final String initialLanguage;
+// ─────────────────────────────────────────────
+//  APP ROOT
+// ─────────────────────────────────────────────
+class QuranApp extends StatefulWidget {
+  final bool initialDark;
+  final String initialReciter;
+  final String initialTranslation;
 
-  const MyApp({
+  const QuranApp({
     super.key,
-    required this.initialDarkMode,
-    required this.initialLanguage,
+    required this.initialDark,
+    required this.initialReciter,
+    required this.initialTranslation,
   });
 
+  static _QuranAppState? of(BuildContext context) =>
+      context.findAncestorStateOfType<_QuranAppState>();
+
   @override
-  State<MyApp> createState() => _MyAppState();
+  State<QuranApp> createState() => _QuranAppState();
 }
 
-class _MyAppState extends State<MyApp> {
+class _QuranAppState extends State<QuranApp> {
   late bool isDark;
-  late String language;
+  late String reciter;
+  late String translation;
 
   @override
   void initState() {
     super.initState();
-    isDark = widget.initialDarkMode;
-    language = widget.initialLanguage;
+    isDark = widget.initialDark;
+    reciter = widget.initialReciter;
+    translation = widget.initialTranslation;
   }
 
-  Future<void> _toggleTheme() async {
+  Future<void> toggleTheme() async {
     setState(() => isDark = !isDark);
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setBool('darkMode', isDark);
+    final p = await SharedPreferences.getInstance();
+    await p.setBool('dark_mode', isDark);
   }
 
-  Future<void> _toggleLanguage() async {
-    setState(() {
-      language = language == 'en' ? 'tr' : 'en';
-    });
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setString('language', language);
+  Future<void> setLanguage(AppLang lang) async {
+    setState(() => L.lang = lang);
+    final p = await SharedPreferences.getInstance();
+    await p.setString('language', lang.name);
+  }
+
+  Future<void> setReciter(String r) async {
+    setState(() => reciter = r);
+    final p = await SharedPreferences.getInstance();
+    await p.setString('reciter', r);
+  }
+
+  Future<void> setTranslation(String t) async {
+    setState(() => translation = t);
+    final p = await SharedPreferences.getInstance();
+    await p.setString('translation', t);
   }
 
   @override
   Widget build(BuildContext context) {
+    final gold = const Color(0xFFC9A84C);
+    final teal = const Color(0xFF1ABC9C);
+
     return MaterialApp(
       debugShowCheckedModeBanner: false,
-      title: 'Pro Kur\'an',
+      title: 'Kur\'an-ı Kerim',
       theme: ThemeData(
         useMaterial3: true,
-        colorSchemeSeed: Colors.teal,
         brightness: isDark ? Brightness.dark : Brightness.light,
-        textTheme: GoogleFonts.lexendTextTheme().apply(
-          bodyColor: isDark ? Colors.white70 : Colors.black87,
-        ),
-        scaffoldBackgroundColor: isDark ? const Color(0xFF121212) : null,
+        scaffoldBackgroundColor:
+            isDark ? const Color(0xFF0D1117) : const Color(0xFFF8F5F0),
+        colorScheme: isDark
+            ? ColorScheme.dark(
+                primary: gold,
+                secondary: teal,
+                surface: const Color(0xFF161B22),
+                surfaceContainerHighest: const Color(0xFF21262D),
+              )
+            : ColorScheme.light(
+                primary: gold,
+                secondary: teal,
+                surface: Colors.white,
+                surfaceContainerHighest: const Color(0xFFF0EBE3),
+              ),
         cardTheme: CardThemeData(
-          color: isDark ? const Color(0xFF1E1E1E) : Colors.white,
-          elevation: 3,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          color: isDark ? const Color(0xFF161B22) : Colors.white,
+          elevation: 0,
+          shape:
+              RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+        ),
+        appBarTheme: AppBarTheme(
+          backgroundColor:
+              isDark ? const Color(0xFF0D1117) : const Color(0xFFF8F5F0),
+          elevation: 0,
+          centerTitle: true,
+          titleTextStyle: GoogleFonts.tajawal(
+            fontSize: 18,
+            fontWeight: FontWeight.w700,
+            color: gold,
+          ),
+          iconTheme:
+              IconThemeData(color: isDark ? Colors.white70 : Colors.black54),
+        ),
+        textTheme: GoogleFonts.tajawalTextTheme().apply(
+          bodyColor: isDark ? const Color(0xFFE6EDF3) : const Color(0xFF1A1A2E),
+          displayColor:
+              isDark ? const Color(0xFFE6EDF3) : const Color(0xFF1A1A2E),
+        ),
+        navigationBarTheme: NavigationBarThemeData(
+          backgroundColor:
+              isDark ? const Color(0xFF161B22) : const Color(0xFFFFFFFF),
+          indicatorColor: gold.withOpacity(0.15),
+          labelTextStyle: WidgetStateProperty.resolveWith((states) {
+            final active = states.contains(WidgetState.selected);
+            return GoogleFonts.tajawal(
+              fontSize: 10,
+              fontWeight: FontWeight.w600,
+              color: active ? gold : (isDark ? Colors.white38 : Colors.black38),
+            );
+          }),
+        ),
+        dividerTheme: DividerThemeData(
+          color: isDark
+              ? Colors.white.withOpacity(0.08)
+              : Colors.black.withOpacity(0.08),
+          thickness: 0.5,
         ),
       ),
       home: RootScreen(
-        toggleTheme: _toggleTheme,
-        toggleLanguage: _toggleLanguage,
         isDark: isDark,
-        language: language,
+        reciter: reciter,
+        translation: translation,
       ),
     );
   }
 }
 
-// =============================================================================
-// ANA EKRAN (RootScreen)
-// =============================================================================
+// ─────────────────────────────────────────────
+//  ROOT SCREEN (Bottom Nav)
+// ─────────────────────────────────────────────
 class RootScreen extends StatefulWidget {
-  final VoidCallback toggleTheme;
-  final VoidCallback toggleLanguage;
   final bool isDark;
-  final String language;
+  final String reciter;
+  final String translation;
 
   const RootScreen({
     super.key,
-    required this.toggleTheme,
-    required this.toggleLanguage,
     required this.isDark,
-    required this.language,
+    required this.reciter,
+    required this.translation,
   });
 
   @override
@@ -192,845 +614,1558 @@ class RootScreen extends StatefulWidget {
 }
 
 class _RootScreenState extends State<RootScreen> {
-  int _selectedIndex = 0;
+  int _idx = 0;
 
   @override
   Widget build(BuildContext context) {
+    final gold = Theme.of(context).colorScheme.primary;
+    final isDark = widget.isDark;
+
     return Scaffold(
-      appBar: AppBar(
-        title: Text(widget.language == 'en' ? 'Pro Quran' : 'Pro Kur\'an'),
-        centerTitle: true,
-        actions: [
-          IconButton(
-            icon: Icon(widget.isDark ? Icons.light_mode : Icons.dark_mode),
-            onPressed: widget.toggleTheme,
-          ),
-          IconButton(
-            icon: const Icon(Icons.language),
-            onPressed: widget.toggleLanguage,
-          ),
-        ],
-      ),
       body: IndexedStack(
-        index: _selectedIndex,
+        index: _idx,
         children: [
-          QuranMainScreen(language: widget.language),
-          PrayerTimesScreen(language: widget.language),
-          const QiblaScreen(),
-          DuaScreen(language: widget.language),
-          const ZikirScreen(),
-          const FullMushafScreen(),
+          QuranScreen(reciter: widget.reciter, translation: widget.translation),
+          PrayerTimesScreen(),
+          QiblaScreen(),
+          DailyScreen(),
+          DuaScreen(),
+          ZikirScreen(),
+          SettingsScreen(),
         ],
       ),
-      bottomNavigationBar: NavigationBar(
-        selectedIndex: _selectedIndex,
-        onDestinationSelected: (index) => setState(() => _selectedIndex = index),
-        destinations: [
-          NavigationDestination(icon: Icon(Icons.book), label: widget.language == 'en' ? 'Quran' : 'Kur\'an'),
-          NavigationDestination(icon: Icon(Icons.timer), label: widget.language == 'en' ? 'Prayer' : 'Namaz'),
-          NavigationDestination(icon: Icon(Icons.explore), label: widget.language == 'en' ? 'Qibla' : 'Kıble'),
-          NavigationDestination(icon: Icon(Icons.auto_awesome), label: widget.language == 'en' ? 'Duas' : 'Dualar'),
-          NavigationDestination(icon: Icon(Icons.favorite), label: widget.language == 'en' ? 'Dhikr' : 'Zikir'),
-          NavigationDestination(icon: Icon(Icons.menu_book), label: widget.language == 'en' ? 'Mushaf' : 'Mushaf'),
-        ],
+      bottomNavigationBar: Container(
+        decoration: BoxDecoration(
+          border: Border(
+            top: BorderSide(
+              color: isDark
+                  ? Colors.white.withOpacity(0.08)
+                  : Colors.black.withOpacity(0.08),
+            ),
+          ),
+        ),
+        child: NavigationBar(
+          selectedIndex: _idx,
+          onDestinationSelected: (i) => setState(() => _idx = i),
+          height: 60,
+          destinations: [
+            NavigationDestination(
+              icon: const Icon(Icons.menu_book_outlined, size: 22),
+              selectedIcon: Icon(Icons.menu_book, size: 22, color: gold),
+              label: L.quran,
+            ),
+            NavigationDestination(
+              icon: const Icon(Icons.access_time_outlined, size: 22),
+              selectedIcon: Icon(Icons.access_time, size: 22, color: gold),
+              label: L.prayer,
+            ),
+            NavigationDestination(
+              icon: const Icon(Icons.explore_outlined, size: 22),
+              selectedIcon: Icon(Icons.explore, size: 22, color: gold),
+              label: L.qibla,
+            ),
+            NavigationDestination(
+              icon: const Icon(Icons.wb_sunny_outlined, size: 22),
+              selectedIcon: Icon(Icons.wb_sunny, size: 22, color: gold),
+              label: L.daily,
+            ),
+            NavigationDestination(
+              icon: const Icon(Icons.volunteer_activism_outlined, size: 22),
+              selectedIcon:
+                  Icon(Icons.volunteer_activism, size: 22, color: gold),
+              label: L.duas,
+            ),
+            NavigationDestination(
+              icon: const Icon(Icons.favorite_outline, size: 22),
+              selectedIcon: Icon(Icons.favorite, size: 22, color: gold),
+              label: L.dhikr,
+            ),
+            NavigationDestination(
+              icon: const Icon(Icons.settings_outlined, size: 22),
+              selectedIcon: Icon(Icons.settings, size: 22, color: gold),
+              label: L.settings,
+            ),
+          ],
+        ),
       ),
     );
   }
 }
 
-// =============================================================================
-// KUR'AN ANA EKRAN
-// =============================================================================
-class QuranMainScreen extends StatefulWidget {
-  final String language;
-  const QuranMainScreen({super.key, required this.language});
+// ─────────────────────────────────────────────
+//  MODEL
+// ─────────────────────────────────────────────
+class SurahMeta {
+  final int number;
+  final String name;
+  final String englishName;
+  final String englishMeaning;
+  final int ayahCount;
+  final bool isMeccan;
 
-  @override
-  State<QuranMainScreen> createState() => _QuranMainScreenState();
+  SurahMeta({
+    required this.number,
+    required this.name,
+    required this.englishName,
+    required this.englishMeaning,
+    required this.ayahCount,
+    required this.isMeccan,
+  });
+
+  factory SurahMeta.fromJson(Map<String, dynamic> j) => SurahMeta(
+        number: j['number'] as int,
+        name: j['name'] as String? ?? '',
+        englishName: j['englishName'] as String? ?? '',
+        englishMeaning: j['englishNameTranslation'] as String? ?? '',
+        ayahCount: j['numberOfAyahs'] as int? ?? 0,
+        isMeccan: (j['revelationType'] as String? ?? '') == 'Meccan',
+      );
 }
 
-class _QuranMainScreenState extends State<QuranMainScreen>
+class AyahData {
+  final int number; // global quran number
+  final int numberInSurah;
+  final String arabic;
+  final String translation;
+  final String audioUrl;
+
+  AyahData({
+    required this.number,
+    required this.numberInSurah,
+    required this.arabic,
+    required this.translation,
+    required this.audioUrl,
+  });
+}
+
+// ─────────────────────────────────────────────
+//  QURAN SCREEN
+// ─────────────────────────────────────────────
+class QuranScreen extends StatefulWidget {
+  final String reciter;
+  final String translation;
+  const QuranScreen(
+      {super.key, required this.reciter, required this.translation});
+
+  @override
+  State<QuranScreen> createState() => _QuranScreenState();
+}
+
+class _QuranScreenState extends State<QuranScreen>
     with SingleTickerProviderStateMixin {
-  late TabController _tabController;
-  String currentReciter = 'ar.alafasy';
-  String currentTranslation = 'tr.diyanet';
-  final TextEditingController _searchController = TextEditingController();
+  late TabController _tab;
+  List<SurahMeta> _surahs = [];
+  List<SurahMeta> _filtered = [];
+  bool _loading = true;
+  String _error = '';
+  final _search = TextEditingController();
+  int? _lastSurah;
+  int _lastAyah = 0;
 
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 3, vsync: this);
-    _searchController.addListener(() => setState(() {}));
+    _tab = TabController(length: 3, vsync: this);
+    _search.addListener(() => _filter(_search.text));
+    _loadMeta();
+    _loadLastPos();
+  }
+
+  Future<void> _loadMeta() async {
+    try {
+      final r = await http
+          .get(Uri.parse('https://api.alquran.cloud/v1/meta'))
+          .timeout(const Duration(seconds: 15));
+      if (r.statusCode == 200) {
+        final data = jsonDecode(r.body);
+        final refs = (data['data']['surahs']['references'] as List);
+        final list = refs
+            .map((e) => SurahMeta.fromJson(Map<String, dynamic>.from(e)))
+            .toList();
+        if (mounted) {
+          setState(() {
+            _surahs = list;
+            _filtered = list;
+            _loading = false;
+          });
+        }
+      } else {
+        throw Exception('HTTP ${r.statusCode}');
+      }
+    } catch (e) {
+      if (mounted)
+        setState(() {
+          _loading = false;
+          _error = e.toString();
+        });
+    }
+  }
+
+  Future<void> _loadLastPos() async {
+    final p = await SharedPreferences.getInstance();
+    _lastSurah = p.getInt('last_surah');
+    _lastAyah = p.getInt('last_ayah') ?? 0;
+    if (mounted) setState(() {});
+  }
+
+  void _filter(String q) {
+    if (q.isEmpty) {
+      setState(() => _filtered = _surahs);
+      return;
+    }
+    final lq = q.toLowerCase();
+    setState(() => _filtered = _surahs
+        .where((s) =>
+            s.englishName.toLowerCase().contains(lq) ||
+            s.name.contains(q) ||
+            s.number.toString() == q)
+        .toList());
   }
 
   @override
   void dispose() {
-    _tabController.dispose();
-    _searchController.dispose();
+    _tab.dispose();
+    _search.dispose();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
+    final gold = Theme.of(context).colorScheme.primary;
+    return Scaffold(
+      appBar: AppBar(
+        title: Text(L.appTitle),
+        bottom: TabBar(
+          controller: _tab,
+          indicatorColor: gold,
+          labelColor: gold,
+          unselectedLabelColor:
+              Theme.of(context).textTheme.bodySmall?.color?.withOpacity(0.5),
+          labelStyle: GoogleFonts.tajawal(fontWeight: FontWeight.w700),
+          tabs: [
+            Tab(text: L.surahList),
+            Tab(text: L.mushaf),
+            Tab(text: L.audio),
+          ],
+        ),
+      ),
+      body: TabBarView(
+        controller: _tab,
+        children: [
+          _buildSurahListTab(),
+          MushafTab(reciter: widget.reciter),
+          AudioTab(surahs: _surahs),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSurahListTab() {
+    if (_loading) return _loadingCenter();
+    if (_error.isNotEmpty) {
+      return _errorCenter(_error, _loadMeta);
+    }
+    final gold = Theme.of(context).colorScheme.primary;
     return Column(
       children: [
         Padding(
           padding: const EdgeInsets.all(12),
           child: TextField(
-            controller: _searchController,
+            controller: _search,
             decoration: InputDecoration(
-              labelText: widget.language == 'en' ? 'Search Surah...' : 'Sure Ara...',
-              prefixIcon: const Icon(Icons.search),
-              border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+              hintText: L.searchSurah,
+              prefixIcon: const Icon(Icons.search, size: 20),
               filled: true,
+              contentPadding:
+                  const EdgeInsets.symmetric(vertical: 10, horizontal: 14),
+              border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                  borderSide: BorderSide.none),
             ),
           ),
         ),
-        TabBar.secondary(
-          controller: _tabController,
-          tabs: [
-            Tab(text: widget.language == 'en' ? 'Arabic' : 'Arapça'),
-            Tab(text: widget.language == 'en' ? 'Translation' : 'Meal'),
-            Tab(text: widget.language == 'en' ? 'Audio' : 'Ses'),
-          ],
-        ),
-        Expanded(
-          child: TabBarView(
-            controller: _tabController,
-            children: [
-              QuranArabicScreen(reciter: currentReciter, searchQuery: _searchController.text),
-              QuranTranslationScreen(translation: currentTranslation, searchQuery: _searchController.text),
-              QuranAudioScreen(reciter: currentReciter, searchQuery: _searchController.text),
-            ],
+        if (_lastSurah != null && _lastAyah > 0)
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+            child: InkWell(
+              onTap: () {
+                final s = _surahs.firstWhere((x) => x.number == _lastSurah!,
+                    orElse: () => _surahs.first);
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => SurahDetailScreen(
+                      surah: s,
+                      reciter: widget.reciter,
+                      translation: widget.translation,
+                      scrollToAyah: _lastAyah,
+                    ),
+                  ),
+                ).then((_) => _loadLastPos());
+              },
+              borderRadius: BorderRadius.circular(10),
+              child: Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                decoration: BoxDecoration(
+                  color: gold.withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(color: gold.withOpacity(0.3)),
+                ),
+                child: Row(
+                  children: [
+                    Icon(Icons.bookmark, color: gold, size: 18),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        '${L.continueReading} — ${_surahs.firstWhere((x) => x.number == _lastSurah!, orElse: () => _surahs.first).englishName}, ${L.verse} $_lastAyah',
+                        style: TextStyle(
+                            color: gold,
+                            fontSize: 13,
+                            fontWeight: FontWeight.w600),
+                      ),
+                    ),
+                    Icon(Icons.arrow_forward_ios, color: gold, size: 14),
+                  ],
+                ),
+              ),
+            ),
           ),
-        ),
-        Padding(
-          padding: const EdgeInsets.all(12),
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-            children: [
-              OutlinedButton.icon(
-                onPressed: () => _showReciterPicker(context),
-                icon: const Icon(Icons.record_voice_over, size: 20),
-                label: Text(reciters[currentReciter]?['name']?.split(' ').last ?? 'Reciter'),
-              ),
-              OutlinedButton.icon(
-                onPressed: () => _showTranslationPicker(context),
-                icon: const Icon(Icons.translate, size: 20),
-                label: Text(translations[currentTranslation]?.split(' - ')[0] ?? 'Translation'),
-              ),
-            ],
+        Expanded(
+          child: ListView.builder(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+            itemCount: _filtered.length,
+            itemBuilder: (ctx, i) => _SurahCard(
+              surah: _filtered[i],
+              onTap: () => Navigator.push(
+                ctx,
+                MaterialPageRoute(
+                  builder: (_) => SurahDetailScreen(
+                    surah: _filtered[i],
+                    reciter: widget.reciter,
+                    translation: widget.translation,
+                  ),
+                ),
+              ).then((_) => _loadLastPos()),
+            ),
           ),
         ),
       ],
     );
   }
-
-  void _showReciterPicker(BuildContext context) {
-    showModalBottomSheet(
-      context: context,
-      builder: (context) => ListView(
-        children: reciters.entries.map((entry) {
-          final selected = entry.key == currentReciter;
-          return ListTile(
-            title: Text(entry.value['name']!),
-            subtitle: Text(entry.value['style']!),
-            trailing: selected ? const Icon(Icons.check_circle, color: Colors.teal) : null,
-            onTap: () {
-              setState(() => currentReciter = entry.key);
-              Navigator.pop(context);
-            },
-          );
-        }).toList(),
-      ),
-    );
-  }
-
-  void _showTranslationPicker(BuildContext context) {
-    showModalBottomSheet(
-      context: context,
-      builder: (context) => ListView(
-        children: translations.entries.map((entry) {
-          final selected = entry.key == currentTranslation;
-          return ListTile(
-            title: Text(entry.value!),
-            trailing: selected ? const Icon(Icons.check_circle, color: Colors.teal) : null,
-            onTap: () {
-              setState(() => currentTranslation = entry.key);
-              Navigator.pop(context);
-            },
-          );
-        }).toList(),
-      ),
-    );
-  }
 }
 
-// =============================================================================
-// ARAPÇA EKRAN (QuranArabicScreen)
-// =============================================================================
-class QuranArabicScreen extends StatefulWidget {
-  final String reciter;
-  final String searchQuery;
+class _SurahCard extends StatelessWidget {
+  final SurahMeta surah;
+  final VoidCallback onTap;
 
-  const QuranArabicScreen({super.key, required this.reciter, required this.searchQuery});
+  const _SurahCard({required this.surah, required this.onTap});
 
   @override
-  State<QuranArabicScreen> createState() => _QuranArabicScreenState();
+  Widget build(BuildContext context) {
+    final gold = Theme.of(context).colorScheme.primary;
+    final teal = Theme.of(context).colorScheme.secondary;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+
+    return Card(
+      margin: const EdgeInsets.only(bottom: 8),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(14),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+          child: Row(
+            children: [
+              Container(
+                width: 40,
+                height: 40,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  gradient: LinearGradient(
+                    colors: [gold, gold.withOpacity(0.7)],
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                  ),
+                ),
+                child: Center(
+                  child: Text(
+                    '${surah.number}',
+                    style: const TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w700,
+                        color: Color(0xFF0D1117)),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(surah.englishName,
+                        style: const TextStyle(
+                            fontSize: 15, fontWeight: FontWeight.w600)),
+                    Text(surah.englishMeaning,
+                        style: TextStyle(
+                            fontSize: 11,
+                            color: isDark ? Colors.white38 : Colors.black38)),
+                  ],
+                ),
+              ),
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.end,
+                children: [
+                  Text(
+                    surah.name,
+                    style:
+                        GoogleFonts.notoNaskhArabic(fontSize: 18, color: gold),
+                    textDirection: TextDirection.rtl,
+                  ),
+                  const SizedBox(height: 4),
+                  Row(
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 6, vertical: 2),
+                        decoration: BoxDecoration(
+                          color: surah.isMeccan
+                              ? teal.withOpacity(0.15)
+                              : gold.withOpacity(0.15),
+                          borderRadius: BorderRadius.circular(6),
+                        ),
+                        child: Text(
+                          surah.isMeccan ? L.meccan : L.medinan,
+                          style: TextStyle(
+                            fontSize: 9,
+                            fontWeight: FontWeight.w700,
+                            color: surah.isMeccan ? teal : gold,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 6),
+                      Text('${surah.ayahCount} ${L.verses}',
+                          style: TextStyle(
+                              fontSize: 10,
+                              color: isDark ? Colors.white38 : Colors.black38)),
+                    ],
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
 }
 
-class _QuranArabicScreenState extends State<QuranArabicScreen> {
-  List<dynamic> surahs = [];
-  List<dynamic> filteredSurahs = [];
-  bool loading = true;
-  int? activeSurah;
-  int lastAyah = 0;
-  List<Map<String, dynamic>> ayahs = [];
-  final player = AudioPlayer();
-  int? nowPlaying;
-  final scrollController = ScrollController();
-  Set<int> bookmarks = {};
-  bool audioLoading = false;
+// ─────────────────────────────────────────────
+//  SURAH DETAIL (Ayahlar)
+// ─────────────────────────────────────────────
+class SurahDetailScreen extends StatefulWidget {
+  final SurahMeta surah;
+  final String reciter;
+  final String translation;
+  final int scrollToAyah;
+
+  const SurahDetailScreen({
+    super.key,
+    required this.surah,
+    required this.reciter,
+    required this.translation,
+    this.scrollToAyah = 0,
+  });
+
+  @override
+  State<SurahDetailScreen> createState() => _SurahDetailScreenState();
+}
+
+class _SurahDetailScreenState extends State<SurahDetailScreen> {
+  List<AyahData> _ayahs = [];
+  bool _loading = true;
+  String _error = '';
+  final _player = AudioPlayer();
+  int _playingIdx = -1;
+  bool _isPlaying = false;
+  bool _audioLoading = false;
+  Set<int> _bookmarks = {};
+  final _scrollCtrl = ScrollController();
+  final Map<int, GlobalKey> _keys = {};
+  double _fontSize = 24;
 
   @override
   void initState() {
     super.initState();
-    _fetchSurahs();
-    _loadLastPosition();
+    _fetchSurah();
     _loadBookmarks();
+    _setupAudio();
   }
 
-  Future<void> _fetchSurahs() async {
+  Future<void> _setupAudio() async {
+    final session = await AudioSession.instance;
+    await session.configure(const AudioSessionConfiguration.speech());
+    _player.playerStateStream.listen((state) {
+      if (mounted) setState(() => _isPlaying = state.playing);
+    });
+    _player.processingStateStream.listen((ps) {
+      if (ps == ProcessingState.completed) _onComplete();
+    });
+  }
+
+  // API: alquran.cloud — uthmani + translation
+  Future<void> _fetchSurah() async {
+    setState(() {
+      _loading = true;
+      _error = '';
+    });
     try {
-      final res = await http.get(Uri.parse('https://api.alquran.cloud/v1/meta'));
-      if (res.statusCode == 200) {
-        final data = jsonDecode(res.body);
+      final url =
+          'https://api.alquran.cloud/v1/surah/${widget.surah.number}/editions/quran-uthmani,${widget.translation}';
+      final r =
+          await http.get(Uri.parse(url)).timeout(const Duration(seconds: 20));
+      if (r.statusCode != 200) throw Exception('HTTP ${r.statusCode}');
+      final data = jsonDecode(r.body)['data'] as List;
+      final uthmani =
+          data.firstWhere((e) => e['edition']['identifier'] == 'quran-uthmani');
+      final trans = data.firstWhere(
+        (e) => e['edition']['identifier'] == widget.translation,
+        orElse: () => uthmani,
+      );
+      final uthmaniAyahs = uthmani['ayahs'] as List;
+      final transAyahs = trans['ayahs'] as List;
+
+      final List<AyahData> ayahs = [];
+      for (int i = 0; i < uthmaniAyahs.length; i++) {
+        final u = uthmaniAyahs[i];
+        final t = i < transAyahs.length ? transAyahs[i] : u;
+        ayahs.add(AyahData(
+          number: u['number'] as int,
+          numberInSurah: u['numberInSurah'] as int,
+          arabic: u['text'] as String,
+          translation:
+              (t['text'] as String?)?.replaceAll(RegExp(r'^\d+\.\s*'), '') ??
+                  '',
+          audioUrl: ayahAudioUrl(
+            widget.surah.number,
+            u['numberInSurah'] as int,
+          ),
+        ));
+        _keys[i] = GlobalKey();
+      }
+
+      if (mounted) {
         setState(() {
-          surahs = data['data']['surahs']['references'];
-          filteredSurahs = surahs;
-          loading = false;
+          _ayahs = ayahs;
+          _loading = false;
         });
+        if (widget.scrollToAyah > 0) {
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            _scrollTo(widget.scrollToAyah - 1);
+          });
+        }
       }
     } catch (e) {
-      debugPrint('Surah list fetch error: $e');
-      setState(() => loading = false);
+      if (mounted)
+        setState(() {
+          _loading = false;
+          _error = e.toString();
+        });
     }
-  }
-
-  void _filterSurahs() {
-    if (widget.searchQuery.isEmpty) {
-      filteredSurahs = surahs;
-    } else {
-      final query = widget.searchQuery.toLowerCase();
-      filteredSurahs = surahs.where((s) {
-        final eng = (s['englishName'] as String?)?.toLowerCase() ?? '';
-        final name = (s['name'] as String?)?.toLowerCase() ?? '';
-        return eng.contains(query) || name.contains(query);
-      }).toList();
-    }
-    setState(() {});
-  }
-
-  Future<void> _loadLastPosition() async {
-    final prefs = await SharedPreferences.getInstance();
-    activeSurah = prefs.getInt('last_arabic_surah');
-    lastAyah = prefs.getInt('last_arabic_ayah') ?? 0;
-    if (activeSurah != null) await _loadSurah(activeSurah!);
-  }
-
-  Future<void> _saveLastPosition() async {
-    if (activeSurah == null) return;
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setInt('last_arabic_surah', activeSurah!);
-    await prefs.setInt('last_arabic_ayah', lastAyah);
   }
 
   Future<void> _loadBookmarks() async {
-    final prefs = await SharedPreferences.getInstance();
-    final list = prefs.getStringList('bookmarks_arabic') ?? [];
-    setState(() => bookmarks = list.map(int.parse).toSet());
+    final p = await SharedPreferences.getInstance();
+    final list = p.getStringList('bm_${widget.surah.number}') ?? [];
+    setState(() => _bookmarks = list.map(int.parse).toSet());
   }
 
-  Future<void> _toggleBookmark(int index) async {
-    final prefs = await SharedPreferences.getInstance();
-    if (bookmarks.contains(index)) {
-      bookmarks.remove(index);
-    } else {
-      bookmarks.add(index);
-    }
-    await prefs.setStringList('bookmarks_arabic', bookmarks.map((e) => e.toString()).toList());
-    setState(() {});
-  }
-
-  Future<void> _loadSurah(int number) async {
+  Future<void> _toggleBookmark(int idx) async {
+    final p = await SharedPreferences.getInstance();
     setState(() {
-      loading = true;
-      ayahs = [];
-      activeSurah = number;
-      nowPlaying = null;
+      if (_bookmarks.contains(idx)) {
+        _bookmarks.remove(idx);
+      } else {
+        _bookmarks.add(idx);
+      }
     });
+    await p.setStringList('bm_${widget.surah.number}',
+        _bookmarks.map((e) => e.toString()).toList());
+  }
+
+  Future<void> _saveLastPos(int ayahIdx) async {
+    final p = await SharedPreferences.getInstance();
+    await p.setInt('last_surah', widget.surah.number);
+    await p.setInt('last_ayah', _ayahs[ayahIdx].numberInSurah);
+  }
+
+  Future<void> _playAyah(int idx) async {
+    if (idx < 0 || idx >= _ayahs.length) return;
+
+    if (_playingIdx == idx && _isPlaying) {
+      await _player.pause();
+      return;
+    }
+    if (_playingIdx == idx && !_isPlaying) {
+      await _player.play();
+      return;
+    }
+
+    setState(() {
+      _playingIdx = idx;
+      _audioLoading = true;
+    });
+    _scrollTo(idx);
+    await _saveLastPos(idx);
 
     try {
-      final url = 'https://api.alquran.cloud/v1/surah/$number/editions/quran-uthmani,${widget.reciter}';
-      final res = await http.get(Uri.parse(url));
-      if (res.statusCode == 200) {
-        final data = jsonDecode(res.body)['data'] as List;
-        final uthmani = data.firstWhere((e) => e['edition']['identifier'] == 'quran-uthmani');
-        final audioData = data.firstWhere(
-          (e) => e['edition']['identifier'] == widget.reciter,
-          orElse: () => {'ayahs': []},
-        );
-
-        final List<Map<String, dynamic>> verses = [];
-        final audioAyahs = audioData['ayahs'] as List? ?? [];
-
-        for (int i = 0; i < uthmani['ayahs'].length; i++) {
-          verses.add({
-            'text': uthmani['ayahs'][i]['text'],
-            'number': uthmani['ayahs'][i]['numberInSurah'],
-            'audio': (i < audioAyahs.length) ? audioAyahs[i]['audio'] ?? '' : '',
-          });
-        }
-
-        setState(() {
-          ayahs = verses;
-          loading = false;
-        });
-
-        if (lastAyah > 0 && scrollController.hasClients) {
-          scrollController.jumpTo((lastAyah - 1) * 180.0);
-        }
-
-        await _saveLastPosition();
-      }
+      await _player.setUrl(_ayahs[idx].audioUrl);
+      await _player.play();
+      setState(() => _audioLoading = false);
     } catch (e) {
-      debugPrint('Surah load error: $e');
-      setState(() => loading = false);
+      // fallback: try another CDN
+      try {
+        final s = widget.surah.number.toString().padLeft(3, '0');
+        final a = _ayahs[idx].numberInSurah.toString().padLeft(3, '0');
+        await _player.setUrl(
+            'https://cdn.islamic.network/quran/audio/128/ar.alafasy/${'${_ayahs[idx].number}'}.mp3');
+        await _player.play();
+      } catch (_) {}
+      setState(() => _audioLoading = false);
     }
   }
 
-  Future<void> _playAyah(int index) async {
-    if (index < 0 || index >= ayahs.length) return;
-    final url = ayahs[index]['audio'] as String? ?? '';
-    if (url.isEmpty) return;
-
-    setState(() => audioLoading = true);
-
-    try {
-      await player.setUrl(url);
-      await player.play();
+  void _onComplete() {
+    final next = _playingIdx + 1;
+    if (next < _ayahs.length) {
+      Future.delayed(const Duration(milliseconds: 300), () => _playAyah(next));
+    } else {
       setState(() {
-        nowPlaying = index;
-        lastAyah = index + 1;
-        audioLoading = false;
+        _playingIdx = -1;
+        _isPlaying = false;
       });
-      await _saveLastPosition();
-      scrollController.animateTo(
-        index * 180.0,
+    }
+  }
+
+  void _scrollTo(int idx) {
+    final key = _keys[idx];
+    if (key?.currentContext != null) {
+      Scrollable.ensureVisible(
+        key!.currentContext!,
         duration: const Duration(milliseconds: 500),
+        alignment: 0.3,
         curve: Curves.easeInOut,
       );
-    } catch (e) {
-      debugPrint('Audio play error: $e');
-      setState(() => audioLoading = false);
     }
   }
 
-  void _shareAyah(Map<String, dynamic> ayah) {
-    Share.share('${ayah['text']} (Ayet ${ayah['number']})');
+  @override
+  void dispose() {
+    _player.dispose();
+    _scrollCtrl.dispose();
+    super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
-    if (loading) return const Center(child: CircularProgressIndicator());
-
-    _filterSurahs();
+    final gold = Theme.of(context).colorScheme.primary;
+    final teal = Theme.of(context).colorScheme.secondary;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
 
     return Scaffold(
       appBar: AppBar(
-        title: Text(activeSurah == null
-            ? 'Arapça Kur\'an'
-            : 'Sure: ${surahs.firstWhereOrNull((s) => s['number'] == activeSurah)?['englishName'] ?? ''}'),
-        leading: activeSurah != null
-            ? IconButton(
-                icon: const Icon(Icons.arrow_back),
-                onPressed: () {
-                  setState(() {
-                    activeSurah = null;
-                    ayahs = [];
-                    nowPlaying = null;
-                    player.stop();
-                  });
-                },
-              )
-            : null,
+        title: Text(widget.surah.englishName),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.text_increase, size: 20),
+            onPressed: () => setState(
+                () => _fontSize = (_fontSize + 2).clamp(16, 36).toDouble()),
+          ),
+          IconButton(
+            icon: const Icon(Icons.text_decrease, size: 20),
+            onPressed: () => setState(
+                () => _fontSize = (_fontSize - 2).clamp(16, 36).toDouble()),
+          ),
+        ],
       ),
-      body: activeSurah == null
-          ? ListView.builder(
-              padding: const EdgeInsets.all(12),
-              itemCount: filteredSurahs.length,
-              itemBuilder: (context, i) {
-                final s = filteredSurahs[i];
-                return Card(
-                  child: ListTile(
-                    leading: CircleAvatar(child: Text('${s['number']}')),
-                    title: Text(s['englishName'] ?? '—'),
-                    subtitle: Text(s['name'] ?? '', textDirection: TextDirection.rtl, style: GoogleFonts.amiri()),
-                    onTap: () => _loadSurah(s['number'] as int),
-                  ),
-                );
-              },
-            )
-          : Column(
-              children: [
-                if (lastAyah > 0)
-                  Padding(
-                    padding: const EdgeInsets.all(16),
-                    child: OutlinedButton(
-                      onPressed: () => scrollController.animateTo(
-                        (lastAyah - 1) * 180.0,
-                        duration: const Duration(milliseconds: 600),
-                        curve: Curves.easeInOut,
+      body: _loading
+          ? _loadingCenter()
+          : _error.isNotEmpty
+              ? _errorCenter(_error, _fetchSurah)
+              : Column(
+                  children: [
+                    // Surah header
+                    Container(
+                      padding: const EdgeInsets.symmetric(vertical: 14),
+                      decoration: BoxDecoration(
+                        color: isDark
+                            ? const Color(0xFF161B22)
+                            : const Color(0xFFFAF7F0),
+                        border: Border(
+                          bottom: BorderSide(color: gold.withOpacity(0.2)),
+                        ),
                       ),
-                      child: Text('Devam et: Ayet $lastAyah'),
+                      child: Column(
+                        children: [
+                          Text(
+                            widget.surah.name,
+                            style: GoogleFonts.notoNaskhArabic(
+                                fontSize: 30,
+                                fontWeight: FontWeight.w700,
+                                color: gold),
+                            textDirection: TextDirection.rtl,
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            '${widget.surah.englishName}  •  ${widget.surah.ayahCount} ${L.verses}  •  ${widget.surah.isMeccan ? L.meccan : L.medinan}',
+                            style: TextStyle(
+                                fontSize: 12,
+                                color:
+                                    isDark ? Colors.white54 : Colors.black45),
+                          ),
+                          if (widget.surah.number != 9) ...[
+                            const SizedBox(height: 8),
+                            Text(
+                              'بِسْمِ اللَّهِ الرَّحْمَٰنِ الرَّحِيمِ',
+                              style: GoogleFonts.notoNaskhArabic(
+                                  fontSize: 20,
+                                  color:
+                                      isDark ? Colors.white70 : Colors.black54),
+                              textDirection: TextDirection.rtl,
+                            ),
+                          ],
+                        ],
+                      ),
                     ),
-                  ),
-                Expanded(
-                  child: ListView.builder(
-                    controller: scrollController,
-                    padding: const EdgeInsets.symmetric(horizontal: 16),
-                    itemCount: ayahs.length,
-                    itemBuilder: (context, index) {
-                      final ayah = ayahs[index];
-                      final playing = nowPlaying == index;
-                      final bookmarked = bookmarks.contains(index);
+                    // Ayah list
+                    Expanded(
+                      child: ListView.builder(
+                        controller: _scrollCtrl,
+                        padding: const EdgeInsets.fromLTRB(12, 8, 12, 100),
+                        itemCount: _ayahs.length,
+                        itemBuilder: (ctx, i) => _AyahCard(
+                          key: _keys[i],
+                          ayah: _ayahs[i],
+                          isPlaying: _playingIdx == i && _isPlaying,
+                          isLoading: _playingIdx == i && _audioLoading,
+                          isBookmarked: _bookmarks.contains(i),
+                          fontSize: _fontSize,
+                          onPlay: () => _playAyah(i),
+                          onBookmark: () => _toggleBookmark(i),
+                          onShare: () => Share.share(
+                              '${_ayahs[i].arabic}\n${_ayahs[i].translation}\n(${widget.surah.englishName} ${_ayahs[i].numberInSurah})'),
+                          onCopy: () {
+                            Clipboard.setData(ClipboardData(
+                                text:
+                                    '${_ayahs[i].arabic}\n${_ayahs[i].translation}'));
+                            ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                                content: Text(L.copied),
+                                duration: const Duration(seconds: 1)));
+                          },
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+      // Mini player bar
+      bottomNavigationBar: _playingIdx >= 0
+          ? _MiniPlayer(
+              ayah: _ayahs[_playingIdx],
+              surahName: widget.surah.englishName,
+              isPlaying: _isPlaying,
+              isLoading: _audioLoading,
+              onPlayPause: () => _playAyah(_playingIdx),
+              onPrev: () => _playAyah(_playingIdx - 1),
+              onNext: () => _playAyah(_playingIdx + 1),
+            )
+          : null,
+    );
+  }
+}
 
-                      return Card(
-                        color: playing ? Colors.teal.withOpacity(0.15) : null,
-                        margin: const EdgeInsets.only(bottom: 12),
-                        child: Padding(
-                          padding: const EdgeInsets.all(16),
+class _AyahCard extends StatelessWidget {
+  final AyahData ayah;
+  final bool isPlaying;
+  final bool isLoading;
+  final bool isBookmarked;
+  final double fontSize;
+  final VoidCallback onPlay;
+  final VoidCallback onBookmark;
+  final VoidCallback onShare;
+  final VoidCallback onCopy;
+
+  const _AyahCard({
+    super.key,
+    required this.ayah,
+    required this.isPlaying,
+    required this.isLoading,
+    required this.isBookmarked,
+    required this.fontSize,
+    required this.onPlay,
+    required this.onBookmark,
+    required this.onShare,
+    required this.onCopy,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final gold = Theme.of(context).colorScheme.primary;
+    final teal = Theme.of(context).colorScheme.secondary;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+
+    return AnimatedContainer(
+      duration: const Duration(milliseconds: 250),
+      margin: const EdgeInsets.only(bottom: 10),
+      decoration: BoxDecoration(
+        color: isPlaying
+            ? (isDark ? teal.withOpacity(0.08) : teal.withOpacity(0.05))
+            : (isDark ? const Color(0xFF161B22) : Colors.white),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(
+          color: isPlaying
+              ? teal.withOpacity(0.4)
+              : (isDark
+                  ? Colors.white.withOpacity(0.07)
+                  : Colors.black.withOpacity(0.07)),
+        ),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(14),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.end,
+          children: [
+            // Arabic text
+            Text(
+              ayah.arabic,
+              textDirection: TextDirection.rtl,
+              textAlign: TextAlign.right,
+              style: GoogleFonts.notoNaskhArabic(
+                  fontSize: fontSize,
+                  height: 2.0,
+                  color: isDark
+                      ? const Color(0xFFE8D5A3)
+                      : const Color(0xFF3D2800)),
+            ),
+            if (ayah.translation.isNotEmpty) ...[
+              const SizedBox(height: 10),
+              Align(
+                alignment: Alignment.centerLeft,
+                child: Text(
+                  ayah.translation,
+                  style: TextStyle(
+                      fontSize: 13,
+                      height: 1.7,
+                      color: isDark ? Colors.white60 : Colors.black54),
+                ),
+              ),
+            ],
+            const SizedBox(height: 10),
+            Row(
+              children: [
+                // Ayah number badge
+                Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: gold.withOpacity(0.12),
+                    borderRadius: BorderRadius.circular(20),
+                    border: Border.all(color: gold.withOpacity(0.3)),
+                  ),
+                  child: Text(
+                    '${L.verse} ${ayah.numberInSurah}',
+                    style: TextStyle(
+                        fontSize: 11, fontWeight: FontWeight.w700, color: gold),
+                  ),
+                ),
+                const Spacer(),
+                // Actions
+                _IconBtn(
+                  icon: isLoading
+                      ? Icons.hourglass_empty
+                      : (isPlaying ? Icons.pause_circle : Icons.play_circle),
+                  color: isPlaying ? teal : gold,
+                  size: 30,
+                  onTap: onPlay,
+                ),
+                _IconBtn(
+                  icon: isBookmarked ? Icons.bookmark : Icons.bookmark_border,
+                  color: isBookmarked ? gold : null,
+                  onTap: onBookmark,
+                ),
+                _IconBtn(icon: Icons.copy_outlined, onTap: onCopy),
+                _IconBtn(icon: Icons.share_outlined, onTap: onShare),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _MiniPlayer extends StatelessWidget {
+  final AyahData ayah;
+  final String surahName;
+  final bool isPlaying;
+  final bool isLoading;
+  final VoidCallback onPlayPause;
+  final VoidCallback onPrev;
+  final VoidCallback onNext;
+
+  const _MiniPlayer({
+    required this.ayah,
+    required this.surahName,
+    required this.isPlaying,
+    required this.isLoading,
+    required this.onPlayPause,
+    required this.onPrev,
+    required this.onNext,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final gold = Theme.of(context).colorScheme.primary;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    return Container(
+      height: 64,
+      padding: const EdgeInsets.symmetric(horizontal: 16),
+      decoration: BoxDecoration(
+        color: isDark ? const Color(0xFF161B22) : Colors.white,
+        border: Border(
+          top: BorderSide(color: gold.withOpacity(0.25)),
+        ),
+      ),
+      child: Row(
+        children: [
+          Icon(Icons.music_note, color: gold, size: 18),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(surahName,
+                    style: const TextStyle(
+                        fontSize: 13, fontWeight: FontWeight.w600)),
+                Text('${L.verse} ${ayah.numberInSurah}',
+                    style: TextStyle(
+                        fontSize: 11,
+                        color: isDark ? Colors.white38 : Colors.black38)),
+              ],
+            ),
+          ),
+          IconButton(
+              onPressed: onPrev,
+              icon: const Icon(Icons.skip_previous, size: 24)),
+          isLoading
+              ? SizedBox(
+                  width: 32,
+                  height: 32,
+                  child: CircularProgressIndicator(color: gold, strokeWidth: 2))
+              : IconButton(
+                  onPressed: onPlayPause,
+                  icon: Icon(isPlaying ? Icons.pause_circle : Icons.play_circle,
+                      size: 36, color: gold)),
+          IconButton(
+              onPressed: onNext, icon: const Icon(Icons.skip_next, size: 24)),
+        ],
+      ),
+    );
+  }
+}
+
+// ─────────────────────────────────────────────
+//  MUSHAF TAB  (quran.com API v4, sayfa sayfa)
+// ─────────────────────────────────────────────
+class MushafTab extends StatefulWidget {
+  final String reciter;
+  const MushafTab({super.key, required this.reciter});
+
+  @override
+  State<MushafTab> createState() => _MushafTabState();
+}
+
+class _MushafTabState extends State<MushafTab> {
+  int _page = 1;
+  static const int _totalPages = 604;
+  List<Map<String, dynamic>> _verses = [];
+  bool _loading = false;
+  String _error = '';
+  final _scrollCtrl = ScrollController();
+  final _player = AudioPlayer();
+  int _playingIdx = -1;
+  bool _isPlaying = false;
+  double _fontSize = 22.0;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadPage(_page);
+    _player.playerStateStream.listen((s) {
+      if (mounted) setState(() => _isPlaying = s.playing);
+    });
+    _player.processingStateStream.listen((ps) {
+      if (ps == ProcessingState.completed) {
+        final next = _playingIdx + 1;
+        if (next < _verses.length) _playVerse(next);
+      }
+    });
+  }
+
+  // quran.com API v4 — mushaf_id=3 = Medina Mushaf
+  Future<void> _loadPage(int page) async {
+    if (mounted)
+      setState(() {
+        _loading = true;
+        _error = '';
+        _verses = [];
+      });
+    try {
+      final url =
+          'https://api.quran.com/api/v4/verses/by_page/$page?mushaf_id=3&fields=text_uthmani,verse_key,juz_number&per_page=50';
+      final r =
+          await http.get(Uri.parse(url)).timeout(const Duration(seconds: 20));
+      if (r.statusCode != 200) throw Exception('HTTP ${r.statusCode}');
+      final data = jsonDecode(r.body);
+      final vs = data['verses'] as List;
+      if (mounted) {
+        setState(() {
+          _verses = vs
+              .map((v) => {
+                    'text': v['text_uthmani'] as String? ?? '',
+                    'key': v['verse_key'] as String? ?? '',
+                    'juz': v['juz_number'],
+                  })
+              .toList();
+          _loading = false;
+          _page = page;
+          _playingIdx = -1;
+        });
+        _scrollCtrl.jumpTo(0);
+      }
+    } catch (e) {
+      if (mounted)
+        setState(() {
+          _loading = false;
+          _error = e.toString();
+        });
+    }
+  }
+
+  Future<void> _playVerse(int idx) async {
+    if (idx < 0 || idx >= _verses.length) return;
+    if (_playingIdx == idx && _isPlaying) {
+      await _player.pause();
+      return;
+    }
+    setState(() => _playingIdx = idx);
+    try {
+      final key = _verses[idx]['key'] as String;
+      final parts = key.split(':');
+      final s = int.parse(parts[0]);
+      final a = int.parse(parts[1]);
+      await _player.setUrl(ayahAudioUrl(s, a));
+      await _player.play();
+    } catch (_) {}
+  }
+
+  @override
+  void dispose() {
+    _player.dispose();
+    _scrollCtrl.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final gold = Theme.of(context).colorScheme.primary;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+
+    return Column(
+      children: [
+        // Page nav bar
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+          color: isDark ? const Color(0xFF161B22) : const Color(0xFFF5F1EB),
+          child: Row(
+            children: [
+              IconButton(
+                onPressed: _page > 1 ? () => _loadPage(_page - 1) : null,
+                icon: const Icon(Icons.chevron_left),
+                visualDensity: VisualDensity.compact,
+              ),
+              Expanded(
+                child: Column(
+                  children: [
+                    SliderTheme(
+                      data: SliderTheme.of(context).copyWith(
+                        trackHeight: 3,
+                        thumbShape:
+                            const RoundSliderThumbShape(enabledThumbRadius: 7),
+                        activeTrackColor: gold,
+                        thumbColor: gold,
+                        inactiveTrackColor: gold.withOpacity(0.2),
+                        overlayShape: SliderComponentShape.noOverlay,
+                      ),
+                      child: Slider(
+                        value: _page.toDouble(),
+                        min: 1,
+                        max: _totalPages.toDouble(),
+                        onChangeEnd: (v) => _loadPage(v.round()),
+                        onChanged: (v) => setState(() => _page = v.round()),
+                      ),
+                    ),
+                    Text(
+                      '${L.mushaf} $_page / $_totalPages',
+                      style: TextStyle(
+                          fontSize: 11,
+                          color: isDark ? Colors.white54 : Colors.black45),
+                    ),
+                  ],
+                ),
+              ),
+              IconButton(
+                onPressed:
+                    _page < _totalPages ? () => _loadPage(_page + 1) : null,
+                icon: const Icon(Icons.chevron_right),
+                visualDensity: VisualDensity.compact,
+              ),
+              PopupMenuButton<int>(
+                icon: const Icon(Icons.more_vert, size: 20),
+                onSelected: _loadPage,
+                itemBuilder: (_) => [
+                  PopupMenuItem(
+                    child: _PageJumpWidget(
+                        current: _page, total: _totalPages, onJump: _loadPage),
+                    value: null,
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+        // Content
+        Expanded(
+          child: _loading
+              ? _loadingCenter()
+              : _error.isNotEmpty
+                  ? _errorCenter(_error, () => _loadPage(_page))
+                  : Stack(
+                      children: [
+                        SingleChildScrollView(
+                          controller: _scrollCtrl,
+                          padding: const EdgeInsets.fromLTRB(16, 12, 16, 80),
                           child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.end,
                             children: [
-                              Text(
-                                ayah['text'],
-                                textDirection: TextDirection.rtl,
-                                style: GoogleFonts.amiri(fontSize: 26, height: 1.8),
-                                textAlign: TextAlign.right,
-                              ),
-                              const SizedBox(height: 12),
-                              Row(
-                                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                                children: [
-                                  Text('Ayet ${ayah['number']}', style: const TextStyle(color: Colors.teal)),
-                                  Row(
-                                    children: [
-                                      if (audioLoading && playing) const CircularProgressIndicator(),
-                                      IconButton(
-                                        icon: Icon(
-                                          playing ? Icons.pause_circle_filled : Icons.play_circle_fill,
-                                          size: 36,
-                                          color: Colors.teal,
-                                        ),
-                                        onPressed: () => _playAyah(index),
-                                      ),
-                                      IconButton(icon: const Icon(Icons.share), onPressed: () => _shareAyah(ayah)),
-                                      IconButton(
-                                        icon: Icon(bookmarked ? Icons.bookmark : Icons.bookmark_border),
-                                        onPressed: () => _toggleBookmark(index),
-                                      ),
-                                    ],
+                              // Bismillah (if not surah 9 start and not page 1's fatiha)
+                              if (_verses.isNotEmpty &&
+                                  _verses.first['key']
+                                      .toString()
+                                      .endsWith(':1') &&
+                                  !_verses.first['key']
+                                      .toString()
+                                      .startsWith('9:'))
+                                Padding(
+                                  padding: const EdgeInsets.only(bottom: 12),
+                                  child: Text(
+                                    'بِسْمِ اللَّهِ الرَّحْمَٰنِ الرَّحِيمِ',
+                                    style: GoogleFonts.notoNaskhArabic(
+                                        fontSize: 20, color: gold),
+                                    textDirection: TextDirection.rtl,
+                                    textAlign: TextAlign.center,
                                   ),
-                                ],
+                                ),
+                              // All verses in one justified block (authentic mushaf style)
+                              RichText(
+                                textDirection: TextDirection.rtl,
+                                textAlign: TextAlign.justify,
+                                text: TextSpan(
+                                  children:
+                                      _verses.asMap().entries.map((entry) {
+                                    final i = entry.key;
+                                    final v = entry.value;
+                                    final key = v['key'] as String;
+                                    final ayahNum =
+                                        int.tryParse(key.split(':').last) ?? 0;
+                                    final isActive = _playingIdx == i;
+                                    return TextSpan(children: [
+                                      TextSpan(
+                                        text: '${v['text']} ',
+                                        style: GoogleFonts.notoNaskhArabic(
+                                          fontSize: _fontSize,
+                                          height: 2.2,
+                                          color: isActive
+                                              ? Theme.of(context)
+                                                  .colorScheme
+                                                  .secondary
+                                              : (isDark
+                                                  ? const Color(0xFFE8D5A3)
+                                                  : const Color(0xFF2C1A00)),
+                                        ),
+                                      ),
+                                      WidgetSpan(
+                                        alignment: PlaceholderAlignment.middle,
+                                        child: GestureDetector(
+                                          onTap: () => _playVerse(i),
+                                          child: Container(
+                                            width: 28,
+                                            height: 28,
+                                            margin: const EdgeInsets.symmetric(
+                                                horizontal: 3),
+                                            decoration: BoxDecoration(
+                                              shape: BoxShape.circle,
+                                              color: isActive
+                                                  ? Theme.of(context)
+                                                      .colorScheme
+                                                      .secondary
+                                                      .withOpacity(0.2)
+                                                  : gold.withOpacity(0.12),
+                                              border: Border.all(
+                                                  color: isActive
+                                                      ? Theme.of(context)
+                                                          .colorScheme
+                                                          .secondary
+                                                      : gold.withOpacity(0.4)),
+                                            ),
+                                            child: Center(
+                                              child: Text(
+                                                '$ayahNum',
+                                                style: TextStyle(
+                                                    fontSize: 9,
+                                                    color: isActive
+                                                        ? Theme.of(context)
+                                                            .colorScheme
+                                                            .secondary
+                                                        : gold,
+                                                    fontWeight:
+                                                        FontWeight.w700),
+                                              ),
+                                            ),
+                                          ),
+                                        ),
+                                      ),
+                                    ]);
+                                  }).toList(),
+                                ),
                               ),
                             ],
                           ),
                         ),
-                      );
-                    },
-                  ),
-                ),
-              ],
-            ),
-    );
-  }
-
-  @override
-  void dispose() {
-    scrollController.dispose();
-    player.dispose();
-    super.dispose();
-  }
-}
-
-// =============================================================================
-// MEAL EKRANI
-// =============================================================================
-class QuranTranslationScreen extends StatefulWidget {
-  final String translation;
-  final String searchQuery;
-
-  const QuranTranslationScreen({super.key, required this.translation, required this.searchQuery});
-
-  @override
-  State<QuranTranslationScreen> createState() => _QuranTranslationScreenState();
-}
-
-class _QuranTranslationScreenState extends State<QuranTranslationScreen> {
-  List<dynamic> surahs = [];
-  List<dynamic> filteredSurahs = [];
-  bool loading = true;
-  int? activeSurah;
-  List<Map<String, String>> ayahs = [];
-  Set<int> bookmarks = {};
-
-  @override
-  void initState() {
-    super.initState();
-    _fetchSurahs();
-    _loadBookmarks();
-  }
-
-  Future<void> _fetchSurahs() async {
-    try {
-      final res = await http.get(Uri.parse('https://api.alquran.cloud/v1/meta'));
-      if (res.statusCode == 200) {
-        final data = jsonDecode(res.body);
-        setState(() {
-          surahs = data['data']['surahs']['references'];
-          filteredSurahs = surahs;
-          loading = false;
-        });
-      }
-    } catch (e) {
-      debugPrint('Translation surah fetch error: $e');
-      setState(() => loading = false);
-    }
-  }
-
-  Future<void> _loadBookmarks() async {
-    final prefs = await SharedPreferences.getInstance();
-    final list = prefs.getStringList('bookmarks_translation') ?? [];
-    setState(() => bookmarks = list.map(int.parse).toSet());
-  }
-
-  Future<void> _toggleBookmark(int index) async {
-    final prefs = await SharedPreferences.getInstance();
-    if (bookmarks.contains(index)) {
-      bookmarks.remove(index);
-    } else {
-      bookmarks.add(index);
-    }
-    await prefs.setStringList('bookmarks_translation', bookmarks.map((e) => e.toString()).toList());
-    setState(() {});
-  }
-
-  Future<void> _loadSurah(int number) async {
-    setState(() {
-      loading = true;
-      ayahs = [];
-      activeSurah = number;
-    });
-
-    try {
-      final url = 'https://api.alquran.cloud/v1/surah/$number/editions/quran-uthmani,${widget.translation}';
-      final res = await http.get(Uri.parse(url));
-      if (res.statusCode == 200) {
-        final data = jsonDecode(res.body)['data'] as List;
-        final transEdition = data.firstWhere(
-          (e) => e['edition']['identifier'] == widget.translation,
-          orElse: () => data.last,
-        );
-
-        setState(() {
-          ayahs = (transEdition['ayahs'] as List)
-              .map((a) => {
-                    'number': a['numberInSurah'].toString(),
-                    'text': a['text'] as String,
-                  })
-              .toList();
-          loading = false;
-        });
-      }
-    } catch (e) {
-      debugPrint('Translation load error: $e');
-      setState(() => loading = false);
-    }
-  }
-
-  void _shareAyah(Map<String, String> ayah) {
-    Share.share('${ayah['text']} (Ayet ${ayah['number']})');
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    if (loading) return const Center(child: CircularProgressIndicator());
-
-    return Scaffold(
-      appBar: AppBar(
-        title: Text(activeSurah == null
-            ? 'Meal'
-            : 'Sure: ${surahs.firstWhereOrNull((s) => s['number'] == activeSurah)?['englishName'] ?? ''}'),
-        leading: activeSurah != null
-            ? IconButton(
-                icon: const Icon(Icons.arrow_back),
-                onPressed: () {
-                  setState(() {
-                    activeSurah = null;
-                    ayahs = [];
-                  });
-                },
-              )
-            : null,
-      ),
-      body: activeSurah == null
-          ? ListView.builder(
-              padding: const EdgeInsets.all(12),
-              itemCount: filteredSurahs.length,
-              itemBuilder: (context, i) {
-                final s = filteredSurahs[i];
-                return Card(
-                  child: ListTile(
-                    leading: CircleAvatar(child: Text('${s['number']}')),
-                    title: Text(s['englishName'] ?? '—'),
-                    subtitle: Text(s['name'] ?? '', textDirection: TextDirection.rtl, style: GoogleFonts.amiri()),
-                    onTap: () => _loadSurah(s['number'] as int),
-                  ),
-                );
-              },
-            )
-          : ListView.builder(
-              padding: const EdgeInsets.all(16),
-              itemCount: ayahs.length,
-              itemBuilder: (context, i) {
-                final ay = ayahs[i];
-                final bookmarked = bookmarks.contains(i);
-                return Card(
-                  child: Padding(
-                    padding: const EdgeInsets.all(16),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text('Ayet ${ay['number']}', style: const TextStyle(color: Colors.teal)),
-                        const SizedBox(height: 8),
-                        Text(ay['text']!, style: const TextStyle(fontSize: 16, height: 1.6)),
-                        Row(
-                          mainAxisAlignment: MainAxisAlignment.end,
-                          children: [
-                            IconButton(icon: const Icon(Icons.share), onPressed: () => _shareAyah(ay)),
-                            IconButton(
-                              icon: Icon(bookmarked ? Icons.bookmark : Icons.bookmark_border),
-                              onPressed: () => _toggleBookmark(i),
-                            ),
-                          ],
+                        // Font size controls
+                        Positioned(
+                          bottom: 12,
+                          right: 12,
+                          child: Column(
+                            children: [
+                              _FloatBtn(
+                                icon: Icons.add,
+                                onTap: () => setState(() =>
+                                    _fontSize = (_fontSize + 2).clamp(14, 40)),
+                              ),
+                              const SizedBox(height: 6),
+                              _FloatBtn(
+                                icon: Icons.remove,
+                                onTap: () => setState(() =>
+                                    _fontSize = (_fontSize - 2).clamp(14, 40)),
+                              ),
+                            ],
+                          ),
                         ),
+                        // Active verse player bar
+                        if (_playingIdx >= 0)
+                          Positioned(
+                            bottom: 0,
+                            left: 0,
+                            right: 0,
+                            child: Container(
+                              height: 48,
+                              color: isDark
+                                  ? const Color(0xFF161B22).withOpacity(0.95)
+                                  : Colors.white.withOpacity(0.95),
+                              padding:
+                                  const EdgeInsets.symmetric(horizontal: 16),
+                              child: Row(
+                                children: [
+                                  Icon(Icons.music_note, color: gold, size: 16),
+                                  const SizedBox(width: 8),
+                                  Expanded(
+                                      child: Text(
+                                    _verses[_playingIdx]['key'],
+                                    style: TextStyle(
+                                        color: gold,
+                                        fontSize: 13,
+                                        fontWeight: FontWeight.w600),
+                                  )),
+                                  IconButton(
+                                    icon: Icon(
+                                        _isPlaying
+                                            ? Icons.pause
+                                            : Icons.play_arrow,
+                                        color: gold,
+                                        size: 24),
+                                    onPressed: () => _playVerse(_playingIdx),
+                                  ),
+                                  IconButton(
+                                    icon: const Icon(Icons.close, size: 20),
+                                    onPressed: () {
+                                      _player.stop();
+                                      setState(() => _playingIdx = -1);
+                                    },
+                                  )
+                                ],
+                              ),
+                            ),
+                          ),
                       ],
                     ),
-                  ),
-                );
-              },
-            ),
+        ),
+      ],
     );
   }
 }
 
-// =============================================================================
-// SES EKRANI
-// =============================================================================
-class QuranAudioScreen extends StatefulWidget {
-  final String reciter;
-  final String searchQuery;
-
-  const QuranAudioScreen({super.key, required this.reciter, required this.searchQuery});
+class _PageJumpWidget extends StatefulWidget {
+  final int current;
+  final int total;
+  final void Function(int) onJump;
+  const _PageJumpWidget(
+      {required this.current, required this.total, required this.onJump});
 
   @override
-  State<QuranAudioScreen> createState() => _QuranAudioScreenState();
+  State<_PageJumpWidget> createState() => _PageJumpWidgetState();
 }
 
-class _QuranAudioScreenState extends State<QuranAudioScreen> {
-  List<dynamic> surahs = [];
-  List<dynamic> filteredSurahs = [];
-  bool loading = true;
-  int? activeSurah;
-  List<String> audioUrls = [];
-  final player = AudioPlayer();
-  int? playingIndex;
-  final scrollController = ScrollController();
-  bool audioLoading = false;
-
+class _PageJumpWidgetState extends State<_PageJumpWidget> {
+  late TextEditingController _c;
   @override
   void initState() {
     super.initState();
-    _fetchSurahs();
-  }
-
-  Future<void> _fetchSurahs() async {
-    try {
-      final res = await http.get(Uri.parse('https://api.alquran.cloud/v1/meta'));
-      if (res.statusCode == 200) {
-        final data = jsonDecode(res.body);
-        setState(() {
-          surahs = data['data']['surahs']['references'];
-          filteredSurahs = surahs;
-          loading = false;
-        });
-      }
-    } catch (e) {
-      debugPrint('Audio surah fetch error: $e');
-      setState(() => loading = false);
-    }
-  }
-
-  Future<void> _loadAudio(int number) async {
-    setState(() {
-      loading = true;
-      audioUrls = [];
-      activeSurah = number;
-      playingIndex = null;
-      audioLoading = true;
-    });
-
-    try {
-      final url = 'https://api.alquran.cloud/v1/surah/$number/editions/${widget.reciter}';
-      final res = await http.get(Uri.parse(url));
-      if (res.statusCode == 200) {
-        final data = jsonDecode(res.body)['data'];
-        final ayahs = data['ayahs'] as List;
-        setState(() {
-          audioUrls = ayahs.map((a) => a['audio'] as String? ?? '').where((s) => s.isNotEmpty).toList();
-          loading = false;
-          audioLoading = false;
-        });
-      }
-    } catch (e) {
-      debugPrint('Audio load error: $e');
-      setState(() {
-        loading = false;
-        audioLoading = false;
-      });
-    }
-  }
-
-  Future<void> _play(int index) async {
-    if (index < 0 || index >= audioUrls.length) return;
-
-    setState(() => audioLoading = true);
-
-    try {
-      await player.setUrl(audioUrls[index]);
-      await player.play();
-      setState(() {
-        playingIndex = index;
-        audioLoading = false;
-      });
-      scrollController.animateTo(
-        index * 60.0,
-        duration: const Duration(milliseconds: 400),
-        curve: Curves.easeInOut,
-      );
-    } catch (e) {
-      debugPrint('Audio play error: $e');
-      setState(() => audioLoading = false);
-    }
+    _c = TextEditingController(text: '${widget.current}');
   }
 
   @override
   Widget build(BuildContext context) {
-    if (loading || audioLoading) return const Center(child: CircularProgressIndicator());
-
-    return Scaffold(
-      appBar: AppBar(
-        title: Text(activeSurah == null
-            ? 'Sesli Kur\'an'
-            : 'Sure: ${surahs.firstWhereOrNull((s) => s['number'] == activeSurah)?['englishName'] ?? ''}'),
-        leading: activeSurah != null
-            ? IconButton(
-                icon: const Icon(Icons.arrow_back),
-                onPressed: () {
-                  setState(() {
-                    activeSurah = null;
-                    audioUrls = [];
-                    playingIndex = null;
-                    player.stop();
-                  });
-                },
-              )
-            : null,
-      ),
-      body: activeSurah == null
-          ? ListView.builder(
-              padding: const EdgeInsets.all(12),
-              itemCount: filteredSurahs.length,
-              itemBuilder: (context, i) {
-                final s = filteredSurahs[i];
-                return Card(
-                  child: ListTile(
-                    leading: CircleAvatar(child: Text('${s['number']}')),
-                    title: Text(s['englishName'] ?? '—'),
-                    trailing: const Icon(Icons.play_arrow),
-                    onTap: () => _loadAudio(s['number'] as int),
-                  ),
-                );
-              },
-            )
-          : Column(
-              children: [
-                Padding(
-                  padding: const EdgeInsets.all(16),
-                  child: Text(
-                    'Ses - ${surahs.firstWhereOrNull((s) => s['number'] == activeSurah)?['englishName'] ?? ''}',
-                    style: Theme.of(context).textTheme.titleLarge,
-                  ),
-                ),
-                Expanded(
-                  child: ListView.builder(
-                    controller: scrollController,
-                    padding: const EdgeInsets.all(16),
-                    itemCount: audioUrls.length,
-                    itemBuilder: (context, i) {
-                      final playing = playingIndex == i;
-                      return ListTile(
-                        tileColor: playing ? Colors.teal.withOpacity(0.15) : null,
-                        title: Text('Ayet ${i + 1}'),
-                        trailing: IconButton(
-                          icon: Icon(playing ? Icons.pause : Icons.play_arrow, color: Colors.teal),
-                          onPressed: () => _play(i),
-                        ),
-                      );
-                    },
-                  ),
-                ),
-              ],
-            ),
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        SizedBox(
+          width: 60,
+          child: TextField(
+            controller: _c,
+            keyboardType: TextInputType.number,
+            decoration: const InputDecoration(
+                isDense: true, contentPadding: EdgeInsets.all(8)),
+          ),
+        ),
+        const SizedBox(width: 8),
+        TextButton(
+          onPressed: () {
+            final p = int.tryParse(_c.text);
+            if (p != null && p >= 1 && p <= widget.total) {
+              widget.onJump(p);
+              Navigator.pop(context);
+            }
+          },
+          child: const Text('Git'),
+        ),
+      ],
     );
+  }
+}
+
+// ─────────────────────────────────────────────
+//  AUDIO TAB (Tam Sure dinle)
+// ─────────────────────────────────────────────
+class AudioTab extends StatefulWidget {
+  final List<SurahMeta> surahs;
+  const AudioTab({super.key, required this.surahs});
+
+  @override
+  State<AudioTab> createState() => _AudioTabState();
+}
+
+class _AudioTabState extends State<AudioTab> {
+  final _player = AudioPlayer();
+  int? _playingSurah;
+  bool _isPlaying = false;
+  String _currentReciter = 'afs'; // Alafasy folder on mp3quran.net
+
+  static const Map<String, String> _reciters = {
+    'afs': 'Mişari Raşid el-Afasî',
+    'maher': 'Maher el-Muaykılî',
+    'minshawi': 'Minsavî',
+  };
+
+  @override
+  void initState() {
+    super.initState();
+    _player.playerStateStream.listen((s) {
+      if (mounted) setState(() => _isPlaying = s.playing);
+    });
+  }
+
+  Future<void> _play(int surahNumber) async {
+    if (_playingSurah == surahNumber && _isPlaying) {
+      await _player.pause();
+      return;
+    }
+    setState(() => _playingSurah = surahNumber);
+    try {
+      final url = surahAudioUrl(surahNumber, folder: _currentReciter);
+      await _player.setUrl(url);
+      await _player.play();
+    } catch (_) {}
   }
 
   @override
   void dispose() {
-    player.dispose();
-    scrollController.dispose();
+    _player.dispose();
     super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final gold = Theme.of(context).colorScheme.primary;
+    if (widget.surahs.isEmpty) return _loadingCenter();
+
+    return Column(
+      children: [
+        // Reciter selector
+        Padding(
+          padding: const EdgeInsets.fromLTRB(12, 10, 12, 4),
+          child: Row(
+            children: [
+              const Icon(Icons.record_voice_over, size: 18),
+              const SizedBox(width: 8),
+              Expanded(
+                child: DropdownButton<String>(
+                  value: _currentReciter,
+                  isExpanded: true,
+                  underline: const SizedBox(),
+                  items: _reciters.entries
+                      .map((e) =>
+                          DropdownMenuItem(value: e.key, child: Text(e.value)))
+                      .toList(),
+                  onChanged: (v) {
+                    if (v != null) {
+                      setState(() => _currentReciter = v);
+                      if (_playingSurah != null) _play(_playingSurah!);
+                    }
+                  },
+                ),
+              ),
+            ],
+          ),
+        ),
+        Expanded(
+          child: ListView.builder(
+            padding: const EdgeInsets.fromLTRB(12, 4, 12, 80),
+            itemCount: widget.surahs.length,
+            itemBuilder: (ctx, i) {
+              final s = widget.surahs[i];
+              final playing = _playingSurah == s.number;
+              return Card(
+                margin: const EdgeInsets.only(bottom: 6),
+                child: ListTile(
+                  leading: Container(
+                    width: 38,
+                    height: 38,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      color: playing
+                          ? gold.withOpacity(0.2)
+                          : gold.withOpacity(0.1),
+                      border: Border.all(
+                          color: playing ? gold : gold.withOpacity(0.3)),
+                    ),
+                    child: Center(
+                        child: Text('${s.number}',
+                            style: TextStyle(
+                                fontSize: 11,
+                                fontWeight: FontWeight.w700,
+                                color: gold))),
+                  ),
+                  title: Text(s.englishName,
+                      style: const TextStyle(
+                          fontSize: 14, fontWeight: FontWeight.w600)),
+                  subtitle: Text(s.name,
+                      style: GoogleFonts.notoNaskhArabic(
+                          fontSize: 14,
+                          color: Theme.of(ctx).colorScheme.primary),
+                      textDirection: TextDirection.rtl),
+                  trailing: Icon(
+                      playing && _isPlaying
+                          ? Icons.pause_circle
+                          : Icons.play_circle,
+                      color: gold,
+                      size: 32),
+                  onTap: () => _play(s.number),
+                ),
+              );
+            },
+          ),
+        ),
+      ],
+    );
   }
 }
 
-// =============================================================================
-// NAMAZ VAKİTLERİ
-// =============================================================================
+// ─────────────────────────────────────────────
+//  NAMAZ VAKİTLERİ
+// ─────────────────────────────────────────────
 class PrayerTimesScreen extends StatefulWidget {
-  final String language;
-  const PrayerTimesScreen({super.key, required this.language});
+  const PrayerTimesScreen({super.key});
 
   @override
   State<PrayerTimesScreen> createState() => _PrayerTimesScreenState();
 }
 
 class _PrayerTimesScreenState extends State<PrayerTimesScreen> {
-  Map<String, dynamic>? timings;
-  String? city;
-  String? country;
-  bool loading = true;
-  String? error;
+  Map<String, String>? _timings;
+  Map<String, String>? _hijriDate;
+  String _city = '';
+  bool _loading = true;
+  String _error = '';
+  String _nextPrayer = '';
+  Duration _remaining = Duration.zero;
+  Timer? _timer;
+
+  static const List<String> _prayerKeys = [
+    'Imsak',
+    'Fajr',
+    'Sunrise',
+    'Dhuhr',
+    'Asr',
+    'Maghrib',
+    'Isha',
+    'Midnight'
+  ];
+
+  static final Map<String, String> _prayerNamesTr = {
+    'Imsak': 'İmsak',
+    'Fajr': 'Sabah',
+    'Sunrise': 'Güneş',
+    'Dhuhr': 'Öğle',
+    'Asr': 'İkindi',
+    'Maghrib': 'Akşam',
+    'Isha': 'Yatsı',
+    'Midnight': 'Gece Yarısı',
+  };
+
+  static final Map<String, String> _prayerNamesEn = {
+    'Imsak': 'Imsak',
+    'Fajr': 'Fajr',
+    'Sunrise': 'Sunrise',
+    'Dhuhr': 'Dhuhr',
+    'Asr': 'Asr',
+    'Maghrib': 'Maghrib',
+    'Isha': 'Isha',
+    'Midnight': 'Midnight',
+  };
+
+  String _prayerName(String key) {
+    if (L.lang == AppLang.en) return _prayerNamesEn[key] ?? key;
+    return _prayerNamesTr[key] ?? key;
+  }
 
   @override
   void initState() {
@@ -1038,77 +2173,290 @@ class _PrayerTimesScreenState extends State<PrayerTimesScreen> {
     _fetch();
   }
 
+  @override
+  void dispose() {
+    _timer?.cancel();
+    super.dispose();
+  }
+
   Future<void> _fetch() async {
+    if (mounted)
+      setState(() {
+        _loading = true;
+        _error = '';
+      });
     try {
       var perm = await Geolocator.checkPermission();
-      if (perm == LocationPermission.denied) perm = await Geolocator.requestPermission();
-      if (perm == LocationPermission.deniedForever || perm == LocationPermission.denied) {
-        setState(() {
-          error = widget.language == 'en' ? 'Location permission denied' : 'Konum izni reddedildi';
-          loading = false;
-        });
-        return;
+      if (perm == LocationPermission.denied) {
+        perm = await Geolocator.requestPermission();
+      }
+      if (perm == LocationPermission.denied ||
+          perm == LocationPermission.deniedForever) {
+        throw Exception(L.locationPermDenied);
       }
 
-      final pos = await Geolocator.getCurrentPosition();
-      final ts = DateTime.now().millisecondsSinceEpoch ~/ 1000;
-      final url = 'https://api.aladhan.com/v1/timings/$ts?latitude=${pos.latitude}&longitude=${pos.longitude}&method=13';
+      final pos = await Geolocator.getCurrentPosition(
+          desiredAccuracy: LocationAccuracy.medium);
 
-      final res = await http.get(Uri.parse(url));
-      if (res.statusCode == 200) {
-        final data = jsonDecode(res.body)['data'];
-        setState(() => timings = data['timings']);
-
-        final places = await placemarkFromCoordinates(pos.latitude, pos.longitude);
+      // Reverse geocode
+      try {
+        final places =
+            await placemarkFromCoordinates(pos.latitude, pos.longitude);
         if (places.isNotEmpty) {
-          final p = places.first;
-          setState(() {
-            city = p.locality ?? p.subAdministrativeArea ?? 'Unknown';
-            country = p.country ?? 'Unknown';
-          });
+          _city =
+              places.first.locality ?? places.first.subAdministrativeArea ?? '';
         }
+      } catch (_) {}
+
+      // aladhan.com — method 13 = Diyanet İşleri Başkanlığı (Turkey)
+      final ts = DateTime.now().millisecondsSinceEpoch ~/ 1000;
+      final url =
+          'https://api.aladhan.com/v1/timings/$ts?latitude=${pos.latitude}&longitude=${pos.longitude}&method=13';
+      final r =
+          await http.get(Uri.parse(url)).timeout(const Duration(seconds: 20));
+      if (r.statusCode != 200) throw Exception('HTTP ${r.statusCode}');
+      final data = jsonDecode(r.body)['data'];
+      final timings = Map<String, String>.from(data['timings'] as Map);
+      final hijri = data['date']['hijri'] as Map;
+
+      if (mounted) {
+        setState(() {
+          _timings = timings;
+          _hijriDate = {
+            'day': hijri['day'] as String,
+            'month': (hijri['month'] as Map)['en'] as String,
+            'year': hijri['year'] as String,
+          };
+          _loading = false;
+        });
+        _computeNext();
+        _timer =
+            Timer.periodic(const Duration(seconds: 1), (_) => _computeNext());
       }
     } catch (e) {
-      setState(() => error = e.toString());
+      if (mounted)
+        setState(() {
+          _loading = false;
+          _error = e.toString();
+        });
     }
-    setState(() => loading = false);
+  }
+
+  void _computeNext() {
+    if (_timings == null) return;
+    final now = TimeOfDay.now();
+    final mainPrayers = ['Fajr', 'Dhuhr', 'Asr', 'Maghrib', 'Isha'];
+    for (final key in mainPrayers) {
+      final t = _timings![key];
+      if (t == null) continue;
+      final parts = t.split(':');
+      final h = int.tryParse(parts[0]) ?? 0;
+      final m = int.tryParse(parts[1].split(' ')[0]) ?? 0;
+      final pMinutes = h * 60 + m;
+      final nowMinutes = now.hour * 60 + now.minute;
+      if (pMinutes > nowMinutes) {
+        final rem = pMinutes - nowMinutes;
+        if (mounted) {
+          setState(() {
+            _nextPrayer = key;
+            _remaining = Duration(minutes: rem);
+          });
+        }
+        return;
+      }
+    }
+    // After Isha — next is Fajr
+    if (mounted)
+      setState(() {
+        _nextPrayer = 'Fajr';
+        _remaining = Duration.zero;
+      });
   }
 
   @override
   Widget build(BuildContext context) {
-    if (loading) return const Center(child: CircularProgressIndicator());
-    if (error != null) return Center(child: Text(error!));
+    final gold = Theme.of(context).colorScheme.primary;
+    final teal = Theme.of(context).colorScheme.secondary;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
 
-    final keys = ['Fajr', 'Sunrise', 'Dhuhr', 'Asr', 'Maghrib', 'Isha'];
-
-    return ListView(
-      padding: const EdgeInsets.all(16),
-      children: [
-        if (city != null && country != null)
-          Card(
-            child: ListTile(
-              leading: const Icon(Icons.location_on, color: Colors.teal),
-              title: Text('$city, $country'),
-              subtitle: Text(widget.language == 'en' ? 'Current Location' : 'Mevcut Konum'),
-            ),
-          ),
-        ...keys.map((k) => Card(
-              child: ListTile(
-                title: Text(k),
-                trailing: Text(
-                  timings?[k] ?? '--:--',
-                  style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: Colors.teal),
+    return Scaffold(
+      appBar: AppBar(
+        title: Text(L.prayerTimes),
+        actions: [
+          IconButton(icon: const Icon(Icons.refresh), onPressed: _fetch),
+        ],
+      ),
+      body: _loading
+          ? _loadingCenter()
+          : _error.isNotEmpty
+              ? _errorCenter(_error, _fetch)
+              : RefreshIndicator(
+                  onRefresh: _fetch,
+                  child: ListView(
+                    padding: const EdgeInsets.all(14),
+                    children: [
+                      // Location + Hijri date card
+                      Container(
+                        padding: const EdgeInsets.all(16),
+                        decoration: BoxDecoration(
+                          gradient: LinearGradient(
+                            colors: isDark
+                                ? [
+                                    const Color(0xFF1A2332),
+                                    const Color(0xFF0D1117)
+                                  ]
+                                : [
+                                    const Color(0xFFFDF8F0),
+                                    const Color(0xFFEDE3D0)
+                                  ],
+                          ),
+                          borderRadius: BorderRadius.circular(16),
+                          border: Border.all(color: gold.withOpacity(0.25)),
+                        ),
+                        child: Column(
+                          children: [
+                            if (_city.isNotEmpty) ...[
+                              Row(
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                children: [
+                                  Icon(Icons.location_on,
+                                      color: gold, size: 16),
+                                  const SizedBox(width: 4),
+                                  Text(_city,
+                                      style: const TextStyle(
+                                          fontSize: 15,
+                                          fontWeight: FontWeight.w600)),
+                                ],
+                              ),
+                              const SizedBox(height: 6),
+                            ],
+                            if (_hijriDate != null)
+                              Text(
+                                '${_hijriDate!['day']} ${_hijriDate!['month']} ${_hijriDate!['year']} H',
+                                style: TextStyle(
+                                    fontSize: 13,
+                                    color: gold,
+                                    fontWeight: FontWeight.w600),
+                              ),
+                            const SizedBox(height: 12),
+                            // Next prayer countdown
+                            if (_nextPrayer.isNotEmpty)
+                              Container(
+                                padding: const EdgeInsets.symmetric(
+                                    horizontal: 16, vertical: 10),
+                                decoration: BoxDecoration(
+                                  color: teal.withOpacity(0.12),
+                                  borderRadius: BorderRadius.circular(10),
+                                  border:
+                                      Border.all(color: teal.withOpacity(0.3)),
+                                ),
+                                child: Row(
+                                  mainAxisAlignment:
+                                      MainAxisAlignment.spaceBetween,
+                                  children: [
+                                    Text(
+                                      '${L.nextPrayer}: ${_prayerName(_nextPrayer)}',
+                                      style: TextStyle(
+                                          color: teal,
+                                          fontWeight: FontWeight.w700,
+                                          fontSize: 14),
+                                    ),
+                                    Text(
+                                      '${_remaining.inHours}s ${_remaining.inMinutes % 60}dk',
+                                      style: TextStyle(
+                                          color: teal,
+                                          fontWeight: FontWeight.w700,
+                                          fontSize: 14),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(height: 14),
+                      // Prayer time cards
+                      GridView.count(
+                        crossAxisCount: 2,
+                        shrinkWrap: true,
+                        physics: const NeverScrollableScrollPhysics(),
+                        crossAxisSpacing: 10,
+                        mainAxisSpacing: 10,
+                        childAspectRatio: 1.7,
+                        children: _prayerKeys
+                            .where((k) => _timings?.containsKey(k) == true)
+                            .map((k) => _PrayerCard(
+                                  name: _prayerName(k),
+                                  time: _timings![k]!,
+                                  isNext: k == _nextPrayer,
+                                ))
+                            .toList(),
+                      ),
+                    ],
+                  ),
                 ),
-              ),
-            )),
-      ],
     );
   }
 }
 
-// =============================================================================
-// KIBLE EKRANI
-// =============================================================================
+class _PrayerCard extends StatelessWidget {
+  final String name;
+  final String time;
+  final bool isNext;
+
+  const _PrayerCard(
+      {required this.name, required this.time, required this.isNext});
+
+  @override
+  Widget build(BuildContext context) {
+    final gold = Theme.of(context).colorScheme.primary;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+      decoration: BoxDecoration(
+        color: isNext
+            ? gold.withOpacity(0.1)
+            : (isDark ? const Color(0xFF161B22) : Colors.white),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(
+          color: isNext
+              ? gold.withOpacity(0.5)
+              : (isDark
+                  ? Colors.white.withOpacity(0.07)
+                  : Colors.black.withOpacity(0.07)),
+          width: isNext ? 1.5 : 0.5,
+        ),
+      ),
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Text(name,
+              style: TextStyle(
+                  fontSize: 12,
+                  color: isNext ? gold : null,
+                  fontWeight: isNext ? FontWeight.w700 : FontWeight.w500)),
+          const SizedBox(height: 6),
+          Text(
+            time.length > 5 ? time.substring(0, 5) : time,
+            style: TextStyle(
+                fontSize: 22,
+                fontWeight: FontWeight.w700,
+                color: isNext ? gold : null),
+          ),
+          if (isNext)
+            Text(
+              '← Sıradaki',
+              style: TextStyle(fontSize: 9, color: gold),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+// ─────────────────────────────────────────────
+//  KIBLE EKRANI  (flutter_compass + Haversine)
+// ─────────────────────────────────────────────
 class QiblaScreen extends StatefulWidget {
   const QiblaScreen({super.key});
 
@@ -1116,183 +2464,735 @@ class QiblaScreen extends StatefulWidget {
   State<QiblaScreen> createState() => _QiblaScreenState();
 }
 
-class _QiblaScreenState extends State<QiblaScreen> {
-  double heading = 0;
-  double qibla = 0;
-  bool hasLoc = false;
-  String error = '';
-
-  StreamSubscription<MagnetometerEvent>? magSub;
-  double filteredHeading = 0;
-  final double alpha = 0.08;
+class _QiblaScreenState extends State<QiblaScreen>
+    with SingleTickerProviderStateMixin {
+  double _qiblaAngle = 0; // degrees from North, clockwise
+  double _compassHeading = 0; // device heading from North
+  bool _hasLocation = false;
+  bool _aligned = false;
+  String _error = '';
+  String _locationName = '';
+  double _distanceKm = 0;
+  StreamSubscription<CompassEvent>? _compassSub;
+  late AnimationController _pulseCtrl;
 
   @override
   void initState() {
     super.initState();
-    _calcQibla();
-    magSub = magnetometerEvents.listen((e) {
-      double nh = math.atan2(e.y, e.x) * (180 / math.pi);
-      if (nh < 0) nh += 360;
-      filteredHeading = filteredHeading + alpha * (nh - filteredHeading);
-      setState(() => heading = filteredHeading);
-    });
+    _pulseCtrl =
+        AnimationController(vsync: this, duration: const Duration(seconds: 2))
+          ..repeat(reverse: true);
+    _initQibla();
   }
 
-  Future<void> _calcQibla() async {
+  Future<void> _initQibla() async {
     try {
-      var p = await Geolocator.checkPermission();
-      if (p == LocationPermission.denied) p = await Geolocator.requestPermission();
-      if (p == LocationPermission.denied || p == LocationPermission.deniedForever) {
-        setState(() => error = 'Konum izni reddedildi');
+      var perm = await Geolocator.checkPermission();
+      if (perm == LocationPermission.denied) {
+        perm = await Geolocator.requestPermission();
+      }
+      if (perm == LocationPermission.denied ||
+          perm == LocationPermission.deniedForever) {
+        setState(() => _error = L.locationPermDenied);
         return;
       }
 
-      final pos = await Geolocator.getCurrentPosition();
-      final url = 'http://api.aladhan.com/v1/qibla/${pos.latitude}/${pos.longitude}';
-      final res = await http.get(Uri.parse(url));
-      if (res.statusCode == 200) {
-        final data = jsonDecode(res.body)['data'];
-        double bearing = data['direction'] as double;
+      final pos = await Geolocator.getCurrentPosition(
+          desiredAccuracy: LocationAccuracy.medium);
+
+      // Haversine bearing to Kaaba
+      final q = _haversineQibla(pos.latitude, pos.longitude);
+      // Distance to Kaaba
+      final dist = Geolocator.distanceBetween(
+              pos.latitude, pos.longitude, kKaabaLat, kKaabaLon) /
+          1000;
+
+      // Reverse geocode
+      try {
+        final places =
+            await placemarkFromCoordinates(pos.latitude, pos.longitude);
+        if (places.isNotEmpty) {
+          _locationName =
+              '${places.first.locality ?? ''}, ${places.first.country ?? ''}';
+        }
+      } catch (_) {}
+
+      if (mounted) {
         setState(() {
-          qibla = bearing;
-          hasLoc = true;
+          _qiblaAngle = q;
+          _distanceKm = dist;
+          _hasLocation = true;
         });
-      } else {
-        setState(() => error = 'API hatası: ${res.statusCode}');
       }
+
+      // Start compass stream
+      _compassSub = FlutterCompass.events?.listen((event) {
+        if (event.heading == null) return;
+        if (mounted) {
+          final diff = (_qiblaAngle - event.heading!).abs() % 360;
+          setState(() {
+            _compassHeading = event.heading!;
+            _aligned = diff < 5 || diff > 355;
+          });
+        }
+      });
     } catch (e) {
-      setState(() => error = e.toString());
+      if (mounted) setState(() => _error = e.toString());
     }
+  }
+
+  // Haversine formula — azimuth from current position to Kaaba
+  // Returns bearing 0-360° clockwise from North
+  double _haversineQibla(double lat, double lon) {
+    final lat1 = lat * math.pi / 180;
+    final lat2 = kKaabaLat * math.pi / 180;
+    final dLon = (kKaabaLon - lon) * math.pi / 180;
+
+    final y = math.sin(dLon) * math.cos(lat2);
+    final x = math.cos(lat1) * math.sin(lat2) -
+        math.sin(lat1) * math.cos(lat2) * math.cos(dLon);
+
+    double bearing = math.atan2(y, x) * 180 / math.pi;
+    return (bearing + 360) % 360;
   }
 
   @override
   void dispose() {
-    magSub?.cancel();
+    _compassSub?.cancel();
+    _pulseCtrl.dispose();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
-    if (error.isNotEmpty) return Center(child: Text(error));
-    if (!hasLoc) return const Center(child: CircularProgressIndicator());
+    final gold = Theme.of(context).colorScheme.primary;
+    final teal = Theme.of(context).colorScheme.secondary;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
 
-    final rot = (qibla - heading) / 360;
-
-    return Center(
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Stack(
-            alignment: Alignment.center,
-            children: [
-              AnimatedRotation(
-                turns: rot,
-                duration: const Duration(milliseconds: 300),
-                child: Icon(Icons.explore, size: 280, color: Colors.teal.withOpacity(0.7)),
-              ),
-              const Icon(Icons.arrow_drop_up, color: Colors.redAccent, size: 100),
-            ],
+    if (_error.isNotEmpty) {
+      return Scaffold(
+        appBar: AppBar(title: Text(L.qiblaFinder)),
+        body: Center(
+          child: Padding(
+            padding: const EdgeInsets.all(24),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Icon(Icons.location_off, size: 48, color: Colors.red),
+                const SizedBox(height: 16),
+                Text(_error,
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(color: Colors.red, fontSize: 14)),
+                const SizedBox(height: 16),
+                ElevatedButton(
+                    onPressed: () {
+                      setState(() => _error = '');
+                      _initQibla();
+                    },
+                    child: const Text('Tekrar Dene / Retry')),
+              ],
+            ),
           ),
-          const SizedBox(height: 40),
-          Text('Kıble: ${qibla.toStringAsFixed(1)}°', style: const TextStyle(fontSize: 22)),
-          Text('Yön: ${heading.toStringAsFixed(1)}°'),
+        ),
+      );
+    }
+
+    if (!_hasLocation) {
+      return Scaffold(
+          appBar: AppBar(title: Text(L.qiblaFinder)), body: _loadingCenter());
+    }
+
+    // The needle should point toward Qibla.
+    // Device heading = compass direction phone is facing.
+    // Arrow rotation = qiblaAngle - compassHeading  (so 0° = phone pointing at Qibla)
+    final arrowAngle = (_qiblaAngle - _compassHeading) * math.pi / 180;
+
+    return Scaffold(
+      appBar: AppBar(title: Text(L.qiblaFinder)),
+      body: SafeArea(
+        child: SingleChildScrollView(
+          child: Padding(
+            padding: const EdgeInsets.all(20),
+            child: Column(
+              children: [
+                Text(L.calibrate,
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                        fontSize: 12,
+                        color: isDark ? Colors.white54 : Colors.black45)),
+                const SizedBox(height: 20),
+                // Compass + Arrow
+                SizedBox(
+                  width: 280,
+                  height: 280,
+                  child: Stack(
+                    alignment: Alignment.center,
+                    children: [
+                      // Outer ring
+                      AnimatedBuilder(
+                        animation: _pulseCtrl,
+                        builder: (_, __) => Container(
+                          width: 280,
+                          height: 280,
+                          decoration: BoxDecoration(
+                            shape: BoxShape.circle,
+                            border: Border.all(
+                                color: (_aligned ? teal : gold)
+                                    .withOpacity(0.3 + _pulseCtrl.value * 0.3),
+                                width: 2),
+                          ),
+                        ),
+                      ),
+                      // Cardinal directions
+                      ...[
+                        _CompassLabel('N', const Offset(0, -120)),
+                        _CompassLabel('S', const Offset(0, 120)),
+                        _CompassLabel('E', const Offset(120, 0)),
+                        _CompassLabel('W', const Offset(-120, 0)),
+                      ],
+                      // Kaaba icon at center
+                      Container(
+                        width: 42,
+                        height: 42,
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          color: gold.withOpacity(0.12),
+                          border: Border.all(color: gold.withOpacity(0.4)),
+                        ),
+                        child: Center(
+                          child:
+                              Text('🕋', style: const TextStyle(fontSize: 20)),
+                        ),
+                      ),
+                      // Rotating arrow — points to Qibla
+                      Transform.rotate(
+                        angle: arrowAngle,
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(Icons.navigation,
+                                size: 80, color: _aligned ? teal : gold),
+                            const SizedBox(height: 50),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 24),
+                // Info card
+                Container(
+                  padding: const EdgeInsets.all(16),
+                  decoration: BoxDecoration(
+                    color: isDark ? const Color(0xFF161B22) : Colors.white,
+                    borderRadius: BorderRadius.circular(16),
+                    border: Border.all(
+                        color: (_aligned ? teal : gold).withOpacity(0.3)),
+                  ),
+                  child: Column(
+                    children: [
+                      if (_aligned)
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 14, vertical: 6),
+                          decoration: BoxDecoration(
+                            color: teal.withOpacity(0.15),
+                            borderRadius: BorderRadius.circular(20),
+                          ),
+                          child: Text('✓ Kıble Yönü Bulundu!',
+                              style: TextStyle(
+                                  color: teal, fontWeight: FontWeight.w700)),
+                        ),
+                      const SizedBox(height: 8),
+                      _InfoRow(L.qiblaDir, '${_qiblaAngle.toStringAsFixed(1)}°',
+                          gold),
+                      _InfoRow(L.deviceHeading,
+                          '${_compassHeading.toStringAsFixed(1)}°', null),
+                      _InfoRow('Kabe Mesafesi',
+                          '${_distanceKm.toStringAsFixed(0)} km', teal),
+                      if (_locationName.isNotEmpty)
+                        _InfoRow('Konum', _locationName, null),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 14),
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: isDark ? const Color(0xFF161B22) : Colors.white,
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(
+                        color: isDark
+                            ? Colors.white.withOpacity(0.07)
+                            : Colors.black.withOpacity(0.07)),
+                  ),
+                  child: Column(
+                    children: [
+                      Text('🕋 Kabe Koordinatları',
+                          style: TextStyle(
+                              fontSize: 12,
+                              color: gold,
+                              fontWeight: FontWeight.w700)),
+                      const SizedBox(height: 4),
+                      Text('21.4225°K,  39.8262°D',
+                          style: TextStyle(
+                              fontSize: 12,
+                              color: isDark ? Colors.white54 : Colors.black45)),
+                      const SizedBox(height: 2),
+                      Text('Hesaplama: Haversine Formülü',
+                          style: TextStyle(
+                              fontSize: 11,
+                              color: isDark ? Colors.white38 : Colors.black38)),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _CompassLabel extends StatelessWidget {
+  final String label;
+  final Offset offset;
+  const _CompassLabel(this.label, this.offset);
+
+  @override
+  Widget build(BuildContext context) {
+    return Transform.translate(
+      offset: offset,
+      child: Text(
+        label,
+        style: TextStyle(
+          fontSize: 14,
+          fontWeight: FontWeight.w700,
+          color: label == 'N'
+              ? Theme.of(context).colorScheme.secondary
+              : Theme.of(context).colorScheme.primary.withOpacity(0.6),
+        ),
+      ),
+    );
+  }
+}
+
+class _InfoRow extends StatelessWidget {
+  final String label;
+  final String value;
+  final Color? valueColor;
+  const _InfoRow(this.label, this.value, this.valueColor);
+
+  @override
+  Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 4),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Text(label,
+              style: TextStyle(
+                  fontSize: 13,
+                  color: isDark ? Colors.white54 : Colors.black45)),
+          Text(value,
+              style: TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w700,
+                  color: valueColor)),
         ],
       ),
     );
   }
 }
 
-// =============================================================================
-// DUALAR EKRANI
-// =============================================================================
+// ─────────────────────────────────────────────
+//  GÜNLÜK EKRAN
+// ─────────────────────────────────────────────
+class DailyScreen extends StatefulWidget {
+  const DailyScreen({super.key});
+
+  @override
+  State<DailyScreen> createState() => _DailyScreenState();
+}
+
+class _DailyScreenState extends State<DailyScreen> {
+  int get _dayIdx => DateTime.now().day % kDailyVerses.length;
+  int get _hadithIdx => DateTime.now().day % kHadiths.length;
+
+  @override
+  Widget build(BuildContext context) {
+    final gold = Theme.of(context).colorScheme.primary;
+    final teal = Theme.of(context).colorScheme.secondary;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final v = kDailyVerses[_dayIdx];
+    final h = kHadiths[_hadithIdx];
+
+    final textColor = isDark ? Colors.white70 : Colors.black87;
+    final subColor = isDark ? Colors.white38 : Colors.black38;
+
+    return Scaffold(
+      appBar: AppBar(title: Text(L.daily)),
+      body: ListView(
+        padding: const EdgeInsets.all(14),
+        children: [
+          // Günün Ayeti
+          _DailyCard(
+            tag: '📖 ${L.dailyVerse}',
+            tagColor: gold,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.end,
+              children: [
+                Text(
+                  v['ar']!,
+                  textDirection: TextDirection.rtl,
+                  textAlign: TextAlign.right,
+                  style: GoogleFonts.notoNaskhArabic(
+                      fontSize: 24,
+                      height: 2,
+                      color: isDark
+                          ? const Color(0xFFE8D5A3)
+                          : const Color(0xFF3D2800)),
+                ),
+                const SizedBox(height: 10),
+                Align(
+                  alignment: Alignment.centerLeft,
+                  child: Text(
+                    L.lang == AppLang.en ? v['en']! : v['tr']!,
+                    style:
+                        TextStyle(fontSize: 14, height: 1.7, color: textColor),
+                  ),
+                ),
+                const SizedBox(height: 6),
+                Text('— ${v['ref']}',
+                    style: TextStyle(fontSize: 11, color: gold)),
+              ],
+            ),
+          ),
+          const SizedBox(height: 12),
+          // Günün Hadisi
+          _DailyCard(
+            tag: '📜 ${L.dailyHadith}',
+            tagColor: teal,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  '"${L.lang == AppLang.en ? h['en']! : h['tr']!}"',
+                  style: TextStyle(
+                      fontSize: 14,
+                      height: 1.8,
+                      fontStyle: FontStyle.italic,
+                      color: textColor),
+                ),
+                const SizedBox(height: 8),
+                Text('— ${h['src']}',
+                    style: TextStyle(fontSize: 11, color: teal)),
+              ],
+            ),
+          ),
+          const SizedBox(height: 12),
+          // Tavsiye Zikir
+          _DailyCard(
+            tag: '📿 ${L.dailyDhikr}',
+            tagColor: const Color(0xFF9B59B6),
+            child: Column(
+              children: [
+                Text(
+                  'سُبْحَانَ اللَّهِ وَبِحَمْدِهِ سُبْحَانَ اللَّهِ الْعَظِيمِ',
+                  textDirection: TextDirection.rtl,
+                  textAlign: TextAlign.center,
+                  style: GoogleFonts.notoNaskhArabic(
+                      fontSize: 20,
+                      color: isDark
+                          ? const Color(0xFFE8D5A3)
+                          : const Color(0xFF3D2800)),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  'Sübhânallahi ve bi-hamdihi sübhânallahi\'l-azîm',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(fontSize: 13, color: subColor),
+                ),
+                const SizedBox(height: 6),
+                Text(
+                  L.lang == AppLang.en
+                      ? 'Recite 100 times daily — Bukhari & Muslim'
+                      : 'Günde 100 kez okunması tavsiye edilir — Buhârî & Müslim',
+                  textAlign: TextAlign.center,
+                  style:
+                      TextStyle(fontSize: 11, color: const Color(0xFF9B59B6)),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 12),
+          // Esmaül Hüsna of the day
+          _DailyCard(
+            tag: '✨ ${L.lang == AppLang.en ? 'Name of the Day' : 'Günün İsmi'}',
+            tagColor: const Color(0xFFE67E22),
+            child: Column(
+              children: [
+                Text(
+                  _getEsma(_dayIdx)['ar']!,
+                  style: GoogleFonts.notoNaskhArabic(fontSize: 32, color: gold),
+                  textDirection: TextDirection.rtl,
+                ),
+                const SizedBox(height: 6),
+                Text(
+                  _getEsma(_dayIdx)['tr']!,
+                  style: const TextStyle(
+                      fontSize: 16, fontWeight: FontWeight.w700),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  _getEsma(_dayIdx)['mean']!,
+                  style: TextStyle(fontSize: 13, color: subColor),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Map<String, String> _getEsma(int idx) {
+    const esma = [
+      {'ar': 'الرَّحْمَٰنُ', 'tr': 'Er-Rahmân', 'mean': 'Çok merhametli'},
+      {'ar': 'الرَّحِيمُ', 'tr': 'Er-Rahîm', 'mean': 'Pek merhametli'},
+      {'ar': 'الْمَلِكُ', 'tr': 'El-Melik', 'mean': 'Gerçek hükümdar'},
+      {'ar': 'الْقُدُّوسُ', 'tr': 'El-Kuddûs', 'mean': 'Kutsal, temiz'},
+      {'ar': 'السَّلَامُ', 'tr': 'Es-Selâm', 'mean': 'Esenlik kaynağı'},
+      {'ar': 'الْمُؤْمِنُ', 'tr': 'El-Mü\'min', 'mean': 'Güvenlik veren'},
+      {'ar': 'الْعَزِيزُ', 'tr': 'El-Azîz', 'mean': 'İzzet sahibi'},
+    ];
+    return esma[idx % esma.length];
+  }
+}
+
+class _DailyCard extends StatelessWidget {
+  final String tag;
+  final Color tagColor;
+  final Widget child;
+  const _DailyCard(
+      {required this.tag, required this.tagColor, required this.child});
+
+  @override
+  Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: isDark ? const Color(0xFF161B22) : Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: tagColor.withOpacity(0.25)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(children: [
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+              decoration: BoxDecoration(
+                color: tagColor.withOpacity(0.12),
+                borderRadius: BorderRadius.circular(20),
+              ),
+              child: Text(tag,
+                  style: TextStyle(
+                      fontSize: 11,
+                      fontWeight: FontWeight.w700,
+                      color: tagColor)),
+            ),
+          ]),
+          const SizedBox(height: 12),
+          child,
+        ],
+      ),
+    );
+  }
+}
+
+// ─────────────────────────────────────────────
+//  DUA EKRANI
+// ─────────────────────────────────────────────
 class DuaScreen extends StatefulWidget {
-  final String language;
-  const DuaScreen({super.key, required this.language});
+  const DuaScreen({super.key});
 
   @override
   State<DuaScreen> createState() => _DuaScreenState();
 }
 
 class _DuaScreenState extends State<DuaScreen> {
-  List<Map<String, dynamic>> duas = [];
-  bool loading = true;
-  String? error;
-
-  @override
-  void initState() {
-    super.initState();
-    _fetchDuas();
-  }
-
-  Future<void> _fetchDuas() async {
-    try {
-      // Örnek bir dua kaynağı (gerçek bir API kullanıyorsanız burayı değiştirin)
-      final url = 'https://raw.githubusercontent.com/iammadhussain/duas/master/duas.json';
-      final res = await http.get(Uri.parse(url));
-      if (res.statusCode == 200) {
-        final data = jsonDecode(res.body) as List;
-        setState(() {
-          duas = data.map((d) => {
-                'title': d['title'] ?? 'Dua',
-                'ar': d['arabic'] ?? '',
-                'tr': d['translation'] ?? '',
-              }).toList();
-          loading = false;
-        });
-      } else {
-        setState(() => error = 'Dua API hatası: ${res.statusCode}');
-      }
-    } catch (e) {
-      setState(() => error = e.toString());
-    }
-  }
+  final Set<int> _expanded = {};
 
   @override
   Widget build(BuildContext context) {
-    if (loading) return const Center(child: CircularProgressIndicator());
-    if (error != null) return Center(child: Text(error!));
+    final gold = Theme.of(context).colorScheme.primary;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
 
-    return ListView.builder(
-      padding: const EdgeInsets.all(16),
-      itemCount: duas.length,
-      itemBuilder: (ctx, i) {
-        final d = duas[i];
-        return Card(
-          child: ExpansionTile(
-            title: Text(d['title']!),
-            children: [
-              Padding(
-                padding: const EdgeInsets.all(16),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Text('Arapça:', style: TextStyle(fontWeight: FontWeight.bold)),
-                    Text(d['ar']!, textDirection: TextDirection.rtl, style: GoogleFonts.amiri(fontSize: 22)),
-                    const SizedBox(height: 16),
-                    const Text('Anlamı:', style: TextStyle(fontWeight: FontWeight.bold)),
-                    Text(d['tr']!),
-                    const SizedBox(height: 12),
-                    Align(
-                      alignment: Alignment.centerRight,
-                      child: IconButton(
-                        icon: const Icon(Icons.share),
-                        onPressed: () => Share.share('${d['ar']}\n${d['tr']}'),
-                      ),
-                    ),
-                  ],
-                ),
+    return Scaffold(
+      appBar: AppBar(title: Text(L.duas)),
+      body: ListView.builder(
+        padding: const EdgeInsets.all(12),
+        itemCount: kDuas.length,
+        itemBuilder: (ctx, i) {
+          final d = kDuas[i];
+          final open = _expanded.contains(i);
+          final title = L.lang == AppLang.en ? d['title_en']! : d['title_tr']!;
+          final meaning = L.lang == AppLang.en ? d['en']! : d['tr']!;
+
+          return Container(
+            margin: const EdgeInsets.only(bottom: 8),
+            decoration: BoxDecoration(
+              color: isDark ? const Color(0xFF161B22) : Colors.white,
+              borderRadius: BorderRadius.circular(14),
+              border: Border.all(
+                color: open
+                    ? gold.withOpacity(0.3)
+                    : (isDark
+                        ? Colors.white.withOpacity(0.07)
+                        : Colors.black.withOpacity(0.07)),
               ),
-            ],
-          ),
-        );
-      },
+            ),
+            child: Column(
+              children: [
+                InkWell(
+                  onTap: () => setState(() {
+                    if (open) {
+                      _expanded.remove(i);
+                    } else {
+                      _expanded.add(i);
+                    }
+                  }),
+                  borderRadius: BorderRadius.circular(14),
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 14, vertical: 12),
+                    child: Row(
+                      children: [
+                        Container(
+                          width: 32,
+                          height: 32,
+                          decoration: BoxDecoration(
+                            shape: BoxShape.circle,
+                            color: gold.withOpacity(0.12),
+                          ),
+                          child: Center(
+                              child: Text('🤲',
+                                  style: const TextStyle(fontSize: 14))),
+                        ),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: Text(title,
+                              style: const TextStyle(
+                                  fontSize: 14, fontWeight: FontWeight.w600)),
+                        ),
+                        Icon(
+                            open
+                                ? Icons.keyboard_arrow_up
+                                : Icons.keyboard_arrow_down,
+                            color: gold,
+                            size: 22),
+                      ],
+                    ),
+                  ),
+                ),
+                if (open)
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(14, 0, 14, 14),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.end,
+                      children: [
+                        Divider(color: gold.withOpacity(0.2)),
+                        const SizedBox(height: 8),
+                        Text(
+                          d['ar']!,
+                          textDirection: TextDirection.rtl,
+                          textAlign: TextAlign.right,
+                          style: GoogleFonts.notoNaskhArabic(
+                            fontSize: 22,
+                            height: 2.0,
+                            color: isDark
+                                ? const Color(0xFFE8D5A3)
+                                : const Color(0xFF3D2800),
+                          ),
+                        ),
+                        const SizedBox(height: 10),
+                        Align(
+                          alignment: Alignment.centerLeft,
+                          child: Text(
+                            meaning,
+                            style: TextStyle(
+                              fontSize: 13,
+                              height: 1.7,
+                              color: isDark ? Colors.white60 : Colors.black54,
+                            ),
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            Container(
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 8, vertical: 3),
+                              decoration: BoxDecoration(
+                                color: Theme.of(context)
+                                    .colorScheme
+                                    .secondary
+                                    .withOpacity(0.12),
+                                borderRadius: BorderRadius.circular(8),
+                              ),
+                              child: Text(
+                                d['src']!,
+                                style: TextStyle(
+                                  fontSize: 10,
+                                  color:
+                                      Theme.of(context).colorScheme.secondary,
+                                  fontWeight: FontWeight.w700,
+                                ),
+                              ),
+                            ),
+                            Row(
+                              children: [
+                                _IconBtn(
+                                  icon: Icons.copy_outlined,
+                                  onTap: () {
+                                    Clipboard.setData(ClipboardData(
+                                        text: '${d['ar']}\n$meaning'));
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                        SnackBar(
+                                            content: Text(L.copied),
+                                            duration:
+                                                const Duration(seconds: 1)));
+                                  },
+                                ),
+                                _IconBtn(
+                                  icon: Icons.share_outlined,
+                                  onTap: () => Share.share(
+                                      '${d['ar']}\n\n$meaning\n\n${d['src']}'),
+                                ),
+                              ],
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
+                  ),
+              ],
+            ),
+          );
+        },
+      ),
     );
   }
 }
 
-// =============================================================================
-// ZİKİR EKRANI
-// =============================================================================
+// ─────────────────────────────────────────────
+//  ZİKİR EKRANI
+// ─────────────────────────────────────────────
 class ZikirScreen extends StatefulWidget {
   const ZikirScreen({super.key});
 
@@ -1300,556 +3200,605 @@ class ZikirScreen extends StatefulWidget {
   State<ZikirScreen> createState() => _ZikirScreenState();
 }
 
-class _ZikirScreenState extends State<ZikirScreen> {
-  int count = 0;
-
-  Future<void> _load() async {
-    final prefs = await SharedPreferences.getInstance();
-    setState(() => count = prefs.getInt('zikir') ?? 0);
-  }
-
-  Future<void> _save() async {
-    final prefs = await SharedPreferences.getInstance();
-    prefs.setInt('zikir', count);
-  }
+class _ZikirScreenState extends State<ZikirScreen>
+    with SingleTickerProviderStateMixin {
+  int _count = 0;
+  int _target = 33;
+  String _currentKey = 'subhanallah';
+  List<Map<String, dynamic>> _history = [];
+  late AnimationController _bounce;
+  late Animation<double> _scale;
 
   @override
   void initState() {
     super.initState();
+    _bounce = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 100),
+    );
+    _scale = Tween(begin: 1.0, end: 0.92)
+        .animate(CurvedAnimation(parent: _bounce, curve: Curves.easeInOut));
     _load();
   }
 
-  void _increment() {
-    setState(() => count++);
-    Vibration.vibrate(duration: 50);
-    _save();
-  }
-
-  void _reset() {
-    setState(() => count = 0);
-    _save();
-  }
-
   @override
-  Widget build(BuildContext context) {
-    return Center(
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Text('$count', style: GoogleFonts.orbitron(fontSize: 120, color: Colors.teal)),
-          const SizedBox(height: 60),
-          GestureDetector(
-            onTap: _increment,
-            child: Container(
-              width: 240,
-              height: 240,
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                border: Border.all(color: Colors.teal, width: 5),
-              ),
-              child: const Icon(Icons.touch_app, size: 100, color: Colors.teal),
-            ),
-          ),
-          const SizedBox(height: 40),
-          ElevatedButton.icon(
-            icon: const Icon(Icons.refresh),
-            label: const Text('Sıfırla'),
-            onPressed: _reset,
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-// =============================================================================
-// TAM MUSHAF EKRANI (FullMushafScreen)
-// =============================================================================
-class FullMushafScreen extends StatefulWidget {
-  const FullMushafScreen({super.key});
-
-  @override
-  State<FullMushafScreen> createState() => _FullMushafScreenState();
-}
-
-class _FullMushafScreenState extends State<FullMushafScreen> with WidgetsBindingObserver {
-  final _pageController = PageController();
-  final _player = AudioPlayer();
-  final _scrollController = ScrollController();
-
-  bool loading = true;
-  bool isPlaying = false;
-  int currentPage = 1;
-  int currentAyahIndex = 0;
-  static const int totalPages = 604;
-
-  double playbackSpeed = 1.0;
-  double waqfSeconds = 0.0;
-  int repeatCount = 1;
-  int repeatRemaining = 1;
-
-  List<Map<String, dynamic>> ayahs = [];
-  List<GlobalKey> ayahKeys = [];
-
-  bool nightMode = false;
-  bool downloadedPage = false;
-  late double sliderPageValue;
-
-  late Box bookmarksBox;
-  late Box progressBox;
-  late Box durationsBox;
-  late Directory appDocDir;
-
-  final dio = Dio();
-
-  int? currentJuz;
-  int? selectedSurah;
-
-  @override
-  void initState() {
-    super.initState();
-    WidgetsBinding.instance.addObserver(this);
-    sliderPageValue = currentPage.toDouble();
-    _initAll();
+  void dispose() {
+    _bounce.dispose();
+    super.dispose();
   }
 
-  Future<void> _initAll() async {
-    bookmarksBox = await Hive.openBox('bookmarks');
-    progressBox = await Hive.openBox('progress');
-    durationsBox = await Hive.openBox('durations');
-    appDocDir = await getApplicationDocumentsDirectory();
-
-    final savedPage = progressBox.get('last_page') as int?;
-    final savedAyah = progressBox.get('last_ayah_index') as int?;
-
-    if (savedPage != null && savedPage >= 1 && savedPage <= totalPages) {
-      currentPage = savedPage;
-      sliderPageValue = currentPage.toDouble();
-    }
-
-    final session = await AudioSession.instance;
-    await session.configure(const AudioSessionConfiguration.speech());
-
-    _player.playerStateStream.listen((state) {
-      if (!mounted) return;
-      setState(() => isPlaying = state.playing);
-    });
-
-    _player.processingStateStream.listen((ps) {
-      if (!mounted) return;
-      if (ps == ProcessingState.completed) _onAyahComplete();
-    });
-
-    await _loadPage(currentPage);
-
-    if (savedAyah != null) {
-      currentAyahIndex = savedAyah;
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted) _scrollAyahIntoView(currentAyahIndex);
-      });
-    }
-  }
-
-  Future<void> _loadPage(int page) async {
-    if (!mounted) return;
-
+  Future<void> _load() async {
+    final p = await SharedPreferences.getInstance();
+    final cnt = p.getInt('zikir_count_$_currentKey') ?? 0;
+    final hist = p.getStringList('zikir_history') ?? [];
     setState(() {
-      loading = true;
-      ayahs.clear();
-      ayahKeys.clear();
-      currentAyahIndex = 0;
-      downloadedPage = false;
-    });
-
-    final uri = Uri.parse(
-      'https://api.quran.com/api/v4/verses/by_page/$page?mushaf_id=3&fields=text_uthmani,juz,verse_key',
-    );
-
-    try {
-      final res = await http.get(uri);
-      if (res.statusCode != 200) throw Exception('API error ${res.statusCode}');
-
-      final json = jsonDecode(res.body);
-      final verses = json['verses'] as List;
-
-      ayahs = verses.map((v) {
-        final verseKey = v['verse_key'] as String;
-        final parts = verseKey.split(':');
+      _count = cnt;
+      _history = hist.map((e) {
+        final parts = e.split('|');
         return {
-          'text': v['text_uthmani'],
-          'surah': int.parse(parts[0]),
-          'ayah': int.parse(parts[1]),
-          'juz': v['juz'],
-          'url': 'https://everyayah.com/data/Alafasy_128kbps/${parts[0].padLeft(3, '0')}${parts[1].padLeft(3, '0')}.mp3',
+          'name': parts.elementAtOrNull(0) ?? '',
+          'count': int.tryParse(parts.elementAtOrNull(1) ?? '0') ?? 0,
+          'date': parts.elementAtOrNull(2) ?? '',
         };
       }).toList();
-
-      ayahKeys = List.generate(ayahs.length, (_) => GlobalKey());
-
-      final pageDir = Directory('${appDocDir.path}/mushaf_pages/$page');
-      downloadedPage = await pageDir.exists();
-
-      _updatePageMeta(page);
-      _saveProgress();
-    } catch (e) {
-      debugPrint('Sayfa yükleme hatası: $e');
-    } finally {
-      if (mounted) setState(() => loading = false);
-    }
-  }
-
-  void _updatePageMeta(int page) {
-    currentJuz = ayahs.isNotEmpty ? ayahs.first['juz'] : ((page - 1) ~/ 20) + 1;
-    if (mounted) setState(() {});
-  }
-
-  String _formatSeconds(double s) {
-    final m = s ~/ 60;
-    final sec = (s % 60).round();
-    return '$m:${sec.toString().padLeft(2, '0')}';
-  }
-
-  TextSpan buildColoredAyahText(String text) {
-    final spans = <TextSpan>[];
-    final words = text.split(RegExp(r'(\s+)'));
-
-    for (var part in words) {
-      if (part.trim().isEmpty) {
-        spans.add(TextSpan(text: part));
-        continue;
-      }
-      var color = nightMode ? Colors.white70 : Colors.black87;
-      if (part.contains('ّ')) color = Colors.purple;
-      if (part.contains(RegExp(r'[آاىٰ]'))) color = Colors.blue;
-
-      spans.add(TextSpan(text: part, style: TextStyle(color: color)));
-    }
-
-    return TextSpan(
-      children: spans,
-      style: GoogleFonts.amiri(fontSize: 26, height: 2.2),
-    );
-  }
-
-  Future<void> _playAyah(int index) async {
-    if (index < 0 || index >= ayahs.length) return;
-
-    if (currentAyahIndex == index && isPlaying) {
-      await _player.pause();
-      return;
-    }
-
-    setState(() {
-      currentAyahIndex = index;
-      repeatRemaining = repeatCount;
     });
+  }
 
-    _scrollAyahIntoView(index);
+  Future<void> _save() async {
+    final p = await SharedPreferences.getInstance();
+    await p.setInt('zikir_count_$_currentKey', _count);
+  }
 
-    final ayah = ayahs[index];
-    final url = ayah['url'] as String;
-
+  Future<void> _increment() async {
+    setState(() => _count++);
+    _bounce.forward().then((_) => _bounce.reverse());
     try {
-      await _player.setUrl(url);
-      await _player.setSpeed(playbackSpeed);
-      await _player.play();
-      _saveProgress();
-    } catch (e) {
-      debugPrint('Oynatma hatası: $e');
-    }
-  }
-
-  Future<void> _onAyahComplete() async {
-    if (repeatRemaining > 1) {
-      repeatRemaining--;
-      await _player.seek(Duration.zero);
-      await _player.play();
-      return;
-    }
-
-    if (waqfSeconds > 0) {
-      await Future.delayed(Duration(milliseconds: (waqfSeconds * 1000).round()));
-    }
-
-    final next = currentAyahIndex + 1;
-    if (next < ayahs.length) {
-      _playAyah(next);
-    } else if (mounted) {
-      setState(() => isPlaying = false);
-    }
-  }
-
-  void _scrollAyahIntoView(int index) {
-    final ctx = ayahKeys[index].currentContext;
-    if (ctx != null) {
-      Scrollable.ensureVisible(ctx, duration: const Duration(milliseconds: 400), alignment: 0.4);
-    }
-  }
-
-  void toggleBookmark() {
-    final key = 'p${currentPage}_a$currentAyahIndex';
-    if (bookmarksBox.containsKey(key)) {
-      bookmarksBox.delete(key);
-    } else {
-      bookmarksBox.put(key, {'page': currentPage, 'ayahIndex': currentAyahIndex});
-    }
-    if (mounted) setState(() {});
-  }
-
-  bool get isCurrentAyahBookmarked => bookmarksBox.containsKey('p${currentPage}_a$currentAyahIndex');
-
-  void _saveProgress() {
-    progressBox.put('last_page', currentPage);
-    progressBox.put('last_ayah_index', currentAyahIndex);
-  }
-
-  void _resetProgress() {
-    progressBox.delete('last_page');
-    progressBox.delete('last_ayah_index');
-    setState(() {
-      currentPage = 1;
-      currentAyahIndex = 0;
-      sliderPageValue = 1;
-    });
-    _pageController.jumpToPage(0);
-    _loadPage(1);
-  }
-
-  void _showPageSearchDialog() {
-    final ctrl = TextEditingController(text: currentPage.toString());
-    showDialog(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text("Sayfaya Git"),
-        content: TextField(
-          controller: ctrl,
-          keyboardType: TextInputType.number,
-          autofocus: true,
-        ),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text("İptal")),
-          TextButton(
-            onPressed: () {
-              final p = int.tryParse(ctrl.text);
-              if (p != null && p >= 1 && p <= totalPages) {
-                setState(() {
-                  currentPage = p;
-                  sliderPageValue = p.toDouble();
-                });
-                _pageController.jumpToPage(p - 1);
-                _loadPage(p);
-                Navigator.pop(ctx);
-              }
-            },
-            child: const Text("Git"),
+      final hasVib = await Vibration.hasVibrator() ?? false;
+      if (hasVib) Vibration.vibrate(duration: 30, amplitude: 60);
+    } catch (_) {}
+    await _save();
+    if (_target > 0 && _count == _target) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(L.lang == AppLang.en
+                ? 'Target reached! Masha\'Allah!'
+                : 'Hedefe ulaştınız! Maşallah!'),
+            backgroundColor: Theme.of(context).colorScheme.secondary,
           ),
-        ],
-      ),
-    );
+        );
+      }
+    }
   }
 
-  void _showSurahPicker() {
-    showModalBottomSheet(
-      context: context,
-      builder: (ctx) => ListView.builder(
-        itemCount: surahNames.length,
-        itemBuilder: (c, i) {
-          final s = surahNames[i];
-          return ListTile(
-            title: Text(s['englishName'] ?? 'Unknown'),
-            subtitle: Text(s['name'] ?? '', textDirection: TextDirection.rtl),
-            onTap: () async {
-              final surahNumber = s['number'] as int;
-              try {
-                final res = await http.get(Uri.parse(
-                    'https://api.quran.com/api/v4/verses/by_chapter/$surahNumber?fields=page_number'));
-                if (res.statusCode == 200) {
-                  final verses = jsonDecode(res.body)['verses'] as List;
-                  final firstPage = verses.first['page_number'] as int;
-                  setState(() {
-                    selectedSurah = surahNumber;
-                    currentPage = firstPage;
-                    sliderPageValue = firstPage.toDouble();
-                  });
-                  _pageController.jumpToPage(firstPage - 1);
-                  _loadPage(firstPage);
-                  Navigator.pop(ctx);
-                }
-              } catch (e) {
-                debugPrint('Sureye gitme hatası: $e');
-              }
-            },
-          );
-        },
-      ),
-    );
+  Future<void> _reset() async {
+    setState(() => _count = 0);
+    await _save();
   }
 
-  Color _getSurahColor(int surahNumber) {
-    return Colors.primaries[surahNumber % Colors.primaries.length].withOpacity(0.1);
+  Future<void> _saveToHistory() async {
+    if (_count == 0) return;
+    final p = await SharedPreferences.getInstance();
+    final d = kZikirList[_currentKey]!;
+    final name = L.lang == AppLang.en ? d['en']! : d['tr']!;
+    final entry =
+        '$name|$_count|${DateTime.now().toLocal().toString().substring(0, 10)}';
+    final hist = p.getStringList('zikir_history') ?? [];
+    hist.insert(0, entry);
+    if (hist.length > 20) hist.removeLast();
+    await p.setStringList('zikir_history', hist);
+    await _reset();
+    await _load();
   }
 
   @override
   Widget build(BuildContext context) {
-    final bg = nightMode ? const Color(0xFF0F0F0F) : const Color(0xFFFDFAF5);
+    final gold = Theme.of(context).colorScheme.primary;
+    final teal = Theme.of(context).colorScheme.secondary;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final d = kZikirList[_currentKey]!;
+    final progress = _target > 0 ? (_count / _target).clamp(0.0, 1.0) : 0.0;
 
     return Scaffold(
-      backgroundColor: bg,
       appBar: AppBar(
-        title: Text('Sayfa $currentPage', style: GoogleFonts.amiri(fontSize: 22)),
-        centerTitle: true,
+        title: Text(L.dhikr),
         actions: [
           IconButton(
-            icon: Icon(nightMode ? Icons.light_mode : Icons.dark_mode),
-            onPressed: () => setState(() => nightMode = !nightMode),
-          ),
-          IconButton(
-            icon: const Icon(Icons.book),
-            onPressed: _showSurahPicker,
+            icon: const Icon(Icons.history, size: 22),
+            onPressed: () => showModalBottomSheet(
+              context: context,
+              builder: (_) => _ZikirHistory(history: _history),
+            ),
           ),
         ],
       ),
       body: Column(
         children: [
-          Container(
-            padding: const EdgeInsets.all(8),
-            color: nightMode ? Colors.grey[900] : Colors.grey[100],
-            child: Row(
-              children: [
-                const Text('Sayfa: '),
-                Expanded(
-                  child: Slider(
-                    value: sliderPageValue,
-                    min: 1,
-                    max: totalPages.toDouble(),
-                    onChanged: (v) => setState(() => sliderPageValue = v),
-                    onChangeEnd: (v) {
-                      final p = v.round();
-                      if (p != currentPage) {
+          // Zikir selector
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+            child: SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              child: Row(
+                children: kZikirList.entries.map((e) {
+                  final active = e.key == _currentKey;
+                  final label =
+                      L.lang == AppLang.en ? e.value['en']! : e.value['tr']!;
+                  return Padding(
+                    padding: const EdgeInsets.only(right: 8),
+                    child: ChoiceChip(
+                      label: Text(label,
+                          style: TextStyle(
+                              fontSize: 12,
+                              color: active ? const Color(0xFF0D1117) : null)),
+                      selected: active,
+                      selectedColor: gold,
+                      onSelected: (_) async {
                         setState(() {
-                          currentPage = p;
-                          sliderPageValue = p.toDouble();
+                          _currentKey = e.key;
+                          _count = 0;
                         });
-                        _pageController.jumpToPage(p - 1);
-                        _loadPage(p);
-                      }
-                    },
-                  ),
-                ),
-                Text(currentPage.toString().padLeft(3, '0')),
-              ],
+                        await _load();
+                      },
+                    ),
+                  );
+                }).toList(),
+              ),
             ),
           ),
           Expanded(
-            child: PageView.builder(
-              controller: _pageController,
-              physics: const NeverScrollableScrollPhysics(),
-              itemCount: totalPages,
-              onPageChanged: (i) {
-                setState(() {
-                  currentPage = i + 1;
-                  sliderPageValue = currentPage.toDouble();
-                });
-                _loadPage(currentPage);
-              },
-              itemBuilder: (context, index) {
-                if (loading) {
-                  return const Center(child: CircularProgressIndicator());
-                }
-
-                return Stack(
-                  children: [
-                    SingleChildScrollView(
-                      controller: _scrollController,
-                      padding: const EdgeInsets.fromLTRB(16, 16, 16, 140),
-                      child: Column(
-                        children: ayahs.asMap().entries.map((entry) {
-                          final idx = entry.key;
-                          final ayah = entry.value;
-                          final active = idx == currentAyahIndex;
-                          final surahNumber = ayah['surah'] as int;
-                          final surahName = surahNames.firstWhereOrNull((s) => s['number'] == surahNumber)?['englishName'] ?? 'Sure';
-
-                          return GestureDetector(
-                            onTap: () => _playAyah(idx),
-                            onLongPress: toggleBookmark,
-                            child: Container(
-                              key: ayahKeys[idx],
-                              margin: const EdgeInsets.symmetric(vertical: 6),
-                              padding: const EdgeInsets.all(10),
-                              decoration: BoxDecoration(
-                                color: active ? Colors.teal.withOpacity(0.15) : _getSurahColor(surahNumber),
-                                borderRadius: BorderRadius.circular(8),
-                              ),
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.end,
-                                children: [
-                                  Text(
-                                    '$surahName - Ayet ${ayah['ayah']}',
-                                    style: const TextStyle(fontSize: 14, color: Colors.teal),
-                                    textDirection: TextDirection.rtl,
-                                  ),
-                                  RichText(
-                                    textDirection: TextDirection.rtl,
-                                    textAlign: TextAlign.justify,
-                                    text: buildColoredAyahText(ayah['text'] as String),
-                                  ),
-                                ],
-                              ),
-                            ),
-                          );
-                        }).toList(),
-                      ),
+            child: Center(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  // Arabic text
+                  Text(
+                    d['ar']!,
+                    style: GoogleFonts.notoNaskhArabic(
+                        fontSize: 28, color: gold, fontWeight: FontWeight.w700),
+                    textDirection: TextDirection.rtl,
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    L.lang == AppLang.en ? d['en']! : d['tr']!,
+                    style: TextStyle(
+                        fontSize: 14,
+                        color: isDark ? Colors.white54 : Colors.black45),
+                  ),
+                  const SizedBox(height: 32),
+                  // Count
+                  Text(
+                    '$_count',
+                    style: TextStyle(
+                      fontSize: 96,
+                      fontWeight: FontWeight.w700,
+                      color: progress >= 1.0 ? teal : gold,
+                      height: 1,
                     ),
-                    Positioned(
-                      bottom: 0,
-                      left: 0,
-                      right: 0,
-                      child: Container(
-                        color: nightMode ? Colors.black87 : Colors.white,
-                        padding: const EdgeInsets.all(8),
-                        child: Row(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            IconButton(
-                              icon: const Icon(Icons.skip_previous),
-                              onPressed: () => _playAyah(currentAyahIndex - 1),
-                            ),
-                            IconButton(
-                              icon: Icon(isPlaying ? Icons.pause_circle : Icons.play_circle, size: 48),
-                              onPressed: () => _playAyah(currentAyahIndex),
-                            ),
-                            IconButton(
-                              icon: const Icon(Icons.skip_next),
-                              onPressed: () => _playAyah(currentAyahIndex + 1),
-                            ),
-                            IconButton(
-                              icon: Icon(isCurrentAyahBookmarked ? Icons.bookmark : Icons.bookmark_border),
-                              onPressed: toggleBookmark,
-                            ),
-                            IconButton(icon: const Icon(Icons.download), onPressed: () {}),
-                            IconButton(icon: const Icon(Icons.search), onPressed: _showPageSearchDialog),
-                            IconButton(icon: const Icon(Icons.restore), onPressed: _resetProgress),
-                          ],
+                  ),
+                  const SizedBox(height: 8),
+                  // Progress
+                  if (_target > 0) ...[
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 40),
+                      child: ClipRRect(
+                        borderRadius: BorderRadius.circular(4),
+                        child: LinearProgressIndicator(
+                          value: progress,
+                          minHeight: 6,
+                          backgroundColor: gold.withOpacity(0.15),
+                          valueColor: AlwaysStoppedAnimation(
+                              progress >= 1.0 ? teal : gold),
                         ),
                       ),
                     ),
+                    const SizedBox(height: 6),
+                    Text(
+                      '$_count / $_target',
+                      style: TextStyle(
+                          fontSize: 13,
+                          color: isDark ? Colors.white38 : Colors.black38),
+                    ),
                   ],
-                );
-              },
+                  const SizedBox(height: 32),
+                  // Main tap button
+                  ScaleTransition(
+                    scale: _scale,
+                    child: GestureDetector(
+                      onTap: _increment,
+                      child: Container(
+                        width: 200,
+                        height: 200,
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          color: isDark
+                              ? const Color(0xFF161B22)
+                              : const Color(0xFFFAF7F0),
+                          border: Border.all(color: gold, width: 3),
+                          boxShadow: [
+                            BoxShadow(
+                              color: gold.withOpacity(0.15),
+                              blurRadius: 20,
+                              spreadRadius: 4,
+                            ),
+                          ],
+                        ),
+                        child: Center(
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(Icons.touch_app, size: 60, color: gold),
+                              const SizedBox(height: 4),
+                              Text(
+                                L.lang == AppLang.en ? 'TAP' : 'TIKLA',
+                                style: TextStyle(
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.w700,
+                                    color: gold,
+                                    letterSpacing: 2),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 24),
+                  // Controls
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 24),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        // Target selector
+                        DropdownButton<int>(
+                          value: _target,
+                          underline: const SizedBox(),
+                          items: [33, 99, 100, 1000, 0]
+                              .map((v) => DropdownMenuItem(
+                                  value: v,
+                                  child: Text(
+                                      '${L.target}: ${v == 0 ? '∞' : v}',
+                                      style: const TextStyle(fontSize: 13))))
+                              .toList(),
+                          onChanged: (v) => setState(() => _target = v ?? 33),
+                        ),
+                        const SizedBox(width: 12),
+                        OutlinedButton.icon(
+                          onPressed: _reset,
+                          icon: const Icon(Icons.refresh, size: 16),
+                          label: Text(L.reset,
+                              style: const TextStyle(fontSize: 13)),
+                        ),
+                        const SizedBox(width: 8),
+                        ElevatedButton.icon(
+                          onPressed: _saveToHistory,
+                          icon: const Icon(Icons.save, size: 16),
+                          label: Text(L.save,
+                              style: const TextStyle(fontSize: 13)),
+                          style: ElevatedButton.styleFrom(
+                              backgroundColor: gold,
+                              foregroundColor: const Color(0xFF0D1117)),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
             ),
           ),
         ],
       ),
     );
   }
+}
+
+class _ZikirHistory extends StatelessWidget {
+  final List<Map<String, dynamic>> history;
+  const _ZikirHistory({required this.history});
 
   @override
-  void dispose() {
-    WidgetsBinding.instance.removeObserver(this);
-    _player.dispose();
-    _pageController.dispose();
-    _scrollController.dispose();
-    super.dispose();
+  Widget build(BuildContext context) {
+    final gold = Theme.of(context).colorScheme.primary;
+    return Container(
+      padding: const EdgeInsets.all(16),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Container(
+              width: 36,
+              height: 4,
+              decoration: BoxDecoration(
+                  color: Colors.grey.shade400,
+                  borderRadius: BorderRadius.circular(2))),
+          const SizedBox(height: 12),
+          Text(L.history,
+              style: TextStyle(
+                  fontSize: 16, fontWeight: FontWeight.w700, color: gold)),
+          const SizedBox(height: 12),
+          if (history.isEmpty)
+            Padding(
+              padding: const EdgeInsets.all(24),
+              child: Text(L.noHistory,
+                  style: TextStyle(color: Colors.grey.shade500)),
+            )
+          else
+            Expanded(
+              child: ListView.separated(
+                itemCount: history.length,
+                separatorBuilder: (_, __) =>
+                    Divider(height: 1, color: Colors.grey.shade200),
+                itemBuilder: (ctx, i) {
+                  final h = history[i];
+                  return ListTile(
+                    dense: true,
+                    title: Text(h['name'] as String,
+                        style: const TextStyle(fontSize: 13)),
+                    trailing: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.end,
+                      children: [
+                        Text('${h['count']}×',
+                            style: TextStyle(
+                                fontWeight: FontWeight.w700,
+                                color: gold,
+                                fontSize: 14)),
+                        Text(h['date'] as String,
+                            style: TextStyle(
+                                fontSize: 10, color: Colors.grey.shade500)),
+                      ],
+                    ),
+                  );
+                },
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+// ─────────────────────────────────────────────
+//  AYARLAR
+// ─────────────────────────────────────────────
+class SettingsScreen extends StatelessWidget {
+  const SettingsScreen({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    final app = QuranApp.of(context);
+    final gold = Theme.of(context).colorScheme.primary;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+
+    return Scaffold(
+      appBar: AppBar(title: Text(L.settings)),
+      body: ListView(
+        padding: const EdgeInsets.all(14),
+        children: [
+          _SettingsSection(
+            title: L.language,
+            child: Column(
+              children: AppLang.values.map((lang) {
+                final labels = {
+                  AppLang.tr: 'Türkçe',
+                  AppLang.en: 'English',
+                  AppLang.ar: 'العربية',
+                };
+                return RadioListTile<AppLang>(
+                  dense: true,
+                  title: Text(labels[lang]!),
+                  value: lang,
+                  groupValue: L.lang,
+                  activeColor: gold,
+                  onChanged: (v) {
+                    if (v != null) app?.setLanguage(v);
+                  },
+                );
+              }).toList(),
+            ),
+          ),
+          const SizedBox(height: 12),
+          _SettingsSection(
+            title: L.theme,
+            child: SwitchListTile(
+              dense: true,
+              title: Text(isDark ? L.dark : L.light),
+              value: isDark,
+              activeColor: gold,
+              onChanged: (_) => app?.toggleTheme(),
+            ),
+          ),
+          const SizedBox(height: 12),
+          _SettingsSection(
+            title: L.reciter,
+            child: Column(
+              children: kReciters.entries.map((e) {
+                final active =
+                    (app != null && QuranApp.of(context)?.reciter == e.key);
+                return ListTile(
+                  dense: true,
+                  title: Text(e.value['name']!),
+                  subtitle: Text(e.value['style']!),
+                  trailing:
+                      active ? Icon(Icons.check_circle, color: gold) : null,
+                  onTap: () => app?.setReciter(e.key),
+                );
+              }).toList(),
+            ),
+          ),
+          const SizedBox(height: 12),
+          _SettingsSection(
+            title: L.translation,
+            child: Column(
+              children: kTranslations.entries.map((e) {
+                final active = QuranApp.of(context)?.translation == e.key;
+                return ListTile(
+                  dense: true,
+                  title: Text(e.value),
+                  trailing:
+                      active ? Icon(Icons.check_circle, color: gold) : null,
+                  onTap: () => app?.setTranslation(e.key),
+                );
+              }).toList(),
+            ),
+          ),
+          const SizedBox(height: 20),
+          Center(
+            child: Text(
+              'Kur\'an-ı Kerim  v2.0\nAPI: alquran.cloud • quran.com • aladhan.com',
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                  fontSize: 11,
+                  color: isDark ? Colors.white30 : Colors.black38),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _SettingsSection extends StatelessWidget {
+  final String title;
+  final Widget child;
+  const _SettingsSection({required this.title, required this.child});
+
+  @override
+  Widget build(BuildContext context) {
+    final gold = Theme.of(context).colorScheme.primary;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    return Container(
+      decoration: BoxDecoration(
+        color: isDark ? const Color(0xFF161B22) : Colors.white,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(
+            color: isDark
+                ? Colors.white.withOpacity(0.07)
+                : Colors.black.withOpacity(0.07)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+            child: Text(title,
+                style: TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w700,
+                    color: gold,
+                    letterSpacing: 0.5)),
+          ),
+          Divider(height: 1, color: gold.withOpacity(0.1)),
+          child,
+        ],
+      ),
+    );
+  }
+}
+
+// ─────────────────────────────────────────────
+//  ORTAK WIDGET'LAR
+// ─────────────────────────────────────────────
+class _IconBtn extends StatelessWidget {
+  final IconData icon;
+  final VoidCallback onTap;
+  final Color? color;
+  final double size;
+
+  const _IconBtn({
+    required this.icon,
+    required this.onTap,
+    this.color,
+    this.size = 22,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(8),
+      child: Padding(
+        padding: const EdgeInsets.all(6),
+        child: Icon(icon,
+            size: size,
+            color: color ??
+                (Theme.of(context).brightness == Brightness.dark
+                    ? Colors.white38
+                    : Colors.black38)),
+      ),
+    );
+  }
+}
+
+class _FloatBtn extends StatelessWidget {
+  final IconData icon;
+  final VoidCallback onTap;
+  const _FloatBtn({required this.icon, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        width: 34,
+        height: 34,
+        decoration: BoxDecoration(
+          shape: BoxShape.circle,
+          color: isDark ? const Color(0xFF21262D) : Colors.white,
+          border: Border.all(
+              color: isDark
+                  ? Colors.white.withOpacity(0.12)
+                  : Colors.black.withOpacity(0.12)),
+        ),
+        child: Icon(icon, size: 18),
+      ),
+    );
+  }
+}
+
+Widget _loadingCenter() => const Center(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          CircularProgressIndicator(),
+          SizedBox(height: 12),
+          Text('Yükleniyor...'),
+        ],
+      ),
+    );
+
+Widget _errorCenter(String msg, VoidCallback retry) => Center(
+      child: Padding(
+        padding: const EdgeInsets.all(24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Icon(Icons.error_outline, size: 40, color: Colors.red),
+            const SizedBox(height: 12),
+            Text(msg,
+                textAlign: TextAlign.center,
+                style: const TextStyle(color: Colors.red, fontSize: 13)),
+            const SizedBox(height: 16),
+            ElevatedButton.icon(
+              onPressed: retry,
+              icon: const Icon(Icons.refresh),
+              label: const Text('Tekrar Dene'),
+            ),
+          ],
+        ),
+      ),
+    );
+
+// Extension
+extension IterableExt<T> on Iterable<T> {
+  T? elementAtOrNull(int index) {
+    if (index < 0) return null;
+    int i = 0;
+    for (final e in this) {
+      if (i == index) return e;
+      i++;
+    }
+    return null;
   }
 }
