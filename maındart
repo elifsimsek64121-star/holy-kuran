@@ -44,6 +44,7 @@ class L {
   static String get settings => t('Ayarlar', 'Settings', 'الإعدادات');
 
   static String get surahList => t('Sure Listesi', 'Surah List', 'قائمة السور');
+  static String get juzList => t('Cüz Listesi', 'Juz List', 'قائمة الأجزاء');
   static String get mushaf => t('Mushaf', 'Mushaf', 'المصحف');
   static String get audio => t('Sesli', 'Audio', 'صوتي');
   static String get searchSurah =>
@@ -52,6 +53,8 @@ class L {
   static String get medinan => t('Medeni', 'Medinan', 'مدنية');
   static String get verse => t('Ayet', 'Verse', 'آية');
   static String get verses => t('ayet', 'verses', 'آيات');
+  static String get juz => t('Cüz', 'Juz', 'جزء');
+  static String get page => t('Sayfa', 'Page', 'صفحة');
   static String get loading =>
       t('Yükleniyor...', 'Loading...', 'جار التحميل...');
   static String get continueReading =>
@@ -103,16 +106,18 @@ class L {
   static String get translation => t('Meal/Çeviri', 'Translation', 'الترجمة');
   static String get appTitle =>
       t('Kur\'an-ı Kerim', 'Holy Quran', 'القرآن الكريم');
+  static String get translationLang =>
+      t('Meal Dili', 'Translation Language', 'لغة الترجمة');
 }
 
 // ─────────────────────────────────────────────
 //  ADMOB YÖNETİCİSİ
+// ─────────────────────────────────────────────
 class AdManager {
   static final AdManager _instance = AdManager._internal();
   factory AdManager() => _instance;
   AdManager._internal();
 
-  // ── Gerçek Reklam ID'leri ──
   static const String _bannerAdUnitId =
       'ca-app-pub-6551908952762916/8664401808';
   static const String _interstitialAdUnitId =
@@ -122,9 +127,6 @@ class AdManager {
   static const String _nativeAdUnitId =
       'ca-app-pub-6551908952762916/9681970000';
 
-  // ── Test ID'leri (Geliştirme sırasında bunları kullan) ──
-  // static const String _nativeAdUnitId = 'ca-app-pub-3940256099942544/2247696110';
-
   InterstitialAd? _interstitialAd;
   RewardedAd? _rewardedAd;
   NativeAd? _nativeAd;
@@ -132,7 +134,6 @@ class AdManager {
   bool _interstitialReady = false;
   bool _rewardedReady = false;
   bool _nativeReady = false;
-
   int _surahOpenCount = 0;
 
   Future<void> initialize() async {
@@ -142,7 +143,6 @@ class AdManager {
     _loadNative();
   }
 
-  // ── BANNER ──
   BannerAd createBanner({required AdSize size}) {
     return BannerAd(
       adUnitId: _bannerAdUnitId,
@@ -150,14 +150,12 @@ class AdManager {
       request: const AdRequest(),
       listener: BannerAdListener(
         onAdFailedToLoad: (ad, error) {
-          print('Banner failed to load: $error');
           ad.dispose();
         },
       ),
     );
   }
 
-  // ── GEÇİŞ REKLAMI ──
   void _loadInterstitial() {
     InterstitialAd.load(
       adUnitId: _interstitialAdUnitId,
@@ -169,7 +167,6 @@ class AdManager {
           ad.setImmersiveMode(true);
         },
         onAdFailedToLoad: (error) {
-          print('Interstitial failed to load: $error');
           _interstitialReady = false;
           Future.delayed(const Duration(seconds: 30), _loadInterstitial);
         },
@@ -181,7 +178,6 @@ class AdManager {
     _surahOpenCount++;
     if (_surahOpenCount % 5 != 0) return;
     if (!_interstitialReady || _interstitialAd == null) return;
-
     _interstitialAd!.fullScreenContentCallback = FullScreenContentCallback(
       onAdDismissedFullScreenContent: (ad) {
         ad.dispose();
@@ -189,7 +185,6 @@ class AdManager {
         _loadInterstitial();
       },
       onAdFailedToShowFullScreenContent: (ad, error) {
-        print('Interstitial failed to show: $error');
         ad.dispose();
         _interstitialReady = false;
         _loadInterstitial();
@@ -198,7 +193,6 @@ class AdManager {
     _interstitialAd!.show();
   }
 
-  // ── ÖDÜLLÜ REKLAM ──
   void _loadRewarded() {
     RewardedAd.load(
       adUnitId: _rewardedAdUnitId,
@@ -209,7 +203,6 @@ class AdManager {
           _rewardedReady = true;
         },
         onAdFailedToLoad: (error) {
-          print('Rewarded failed to load: $error');
           _rewardedReady = false;
           Future.delayed(const Duration(seconds: 30), _loadRewarded);
         },
@@ -227,7 +220,6 @@ class AdManager {
       onDismissed?.call();
       return;
     }
-
     _rewardedAd!.fullScreenContentCallback = FullScreenContentCallback(
       onAdDismissedFullScreenContent: (ad) {
         ad.dispose();
@@ -236,7 +228,6 @@ class AdManager {
         onDismissed?.call();
       },
       onAdFailedToShowFullScreenContent: (ad, error) {
-        print('Rewarded failed to show: $error');
         ad.dispose();
         _rewardedReady = false;
         _loadRewarded();
@@ -246,17 +237,14 @@ class AdManager {
     _rewardedAd!.show(onUserEarnedReward: (_, __) => onRewarded());
   }
 
-  // ── NATIVE REKLAM (Düzeltilmiş) ──
   void _loadNative() {
     _nativeAd?.dispose();
     _nativeAd = null;
     _nativeReady = false;
-
     _nativeAd = NativeAd(
       adUnitId: _nativeAdUnitId,
-      // factoryId: 'listTile'  ← Bu satır kaldırıldı!
       nativeTemplateStyle: NativeTemplateStyle(
-        templateType: TemplateType.small, // 80px yüksekliğe uygun
+        templateType: TemplateType.small,
         mainBackgroundColor: Colors.transparent,
         cornerRadius: 14,
         callToActionTextStyle: NativeTemplateTextStyle(
@@ -267,17 +255,11 @@ class AdManager {
       ),
       request: const AdRequest(),
       listener: NativeAdListener(
-        onAdLoaded: (ad) {
-          _nativeReady = true;
-          print('NativeAd başarıyla yüklendi');
-        },
+        onAdLoaded: (ad) => _nativeReady = true,
         onAdFailedToLoad: (ad, error) {
-          print('NativeAd yüklenemedi: $error');
           ad.dispose();
           _nativeReady = false;
           _nativeAd = null;
-
-          // 30 saniye sonra tekrar dene
           Future.delayed(const Duration(seconds: 30), _loadNative);
         },
       ),
@@ -287,17 +269,10 @@ class AdManager {
   bool get isNativeReady => _nativeReady;
   NativeAd? get nativeAd => _nativeAd;
 
-  void disposeNative() {
-    _nativeAd?.dispose();
-    _nativeAd = null;
-    _nativeReady = false;
-  }
-
-  // Tüm reklamları temizle (uygulama kapanırken)
   void disposeAll() {
     _interstitialAd?.dispose();
     _rewardedAd?.dispose();
-    disposeNative();
+    _nativeAd?.dispose();
   }
 }
 
@@ -322,9 +297,7 @@ class _AdBannerWidgetState extends State<AdBannerWidget> {
     _banner = AdManager().createBanner(size: widget.size);
     _banner!.load().then((_) {
       if (mounted) setState(() => _loaded = true);
-    }).catchError((error) {
-      print('Banner load error: $error');
-    });
+    }).catchError((_) {});
   }
 
   @override
@@ -336,7 +309,6 @@ class _AdBannerWidgetState extends State<AdBannerWidget> {
   @override
   Widget build(BuildContext context) {
     if (!_loaded || _banner == null) return const SizedBox.shrink();
-
     return SizedBox(
       width: _banner!.size.width.toDouble(),
       height: _banner!.size.height.toDouble(),
@@ -346,7 +318,7 @@ class _AdBannerWidgetState extends State<AdBannerWidget> {
 }
 
 // ─────────────────────────────────────────────
-//  NATIVE AD KART (Günlük ekranı için)
+//  NATIVE AD KART
 // ─────────────────────────────────────────────
 class NativeAdCard extends StatelessWidget {
   const NativeAdCard({super.key});
@@ -354,15 +326,12 @@ class NativeAdCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final adManager = AdManager();
-
     if (!adManager.isNativeReady || adManager.nativeAd == null) {
       return const SizedBox.shrink();
     }
-
     final isDark = Theme.of(context).brightness == Brightness.dark;
-
     return Container(
-      height: 90, // small template için biraz daha güvenli yükseklik
+      height: 90,
       margin: const EdgeInsets.only(bottom: 12),
       decoration: BoxDecoration(
         color: isDark ? const Color(0xFF161B22) : Colors.white,
@@ -387,10 +356,8 @@ class NativeAdCard extends StatelessWidget {
                   color: Colors.grey.withOpacity(0.25),
                   borderRadius: BorderRadius.circular(4),
                 ),
-                child: const Text(
-                  'Reklam',
-                  style: TextStyle(fontSize: 10, color: Colors.white70),
-                ),
+                child: const Text('Reklam',
+                    style: TextStyle(fontSize: 10, color: Colors.white70)),
               ),
             ),
           ],
@@ -415,12 +382,290 @@ const Map<String, Map<String, String>> kReciters = {
   'ar.ghamadi': {'name': 'Saad el-Gamedî', 'style': 'Murattal'},
 };
 
+// Türkçe meal için DOĞRU identifier'lar (alquran.cloud API)
 const Map<String, String> kTranslations = {
   'tr.diyanet': 'Türkçe – Diyanet İşleri',
-  'tr.suat': 'Türkçe – Suat Yıldırım',
+  'tr.yazir': 'Türkçe – Elmalılı Hamdi Yazır',
   'en.sahih': 'English – Sahih International',
-  'en.asad': 'English – Muhammad Asad',
+  'en.pickthall': 'English – Pickthall',
   'ar.muyassar': 'العربية – الميسر',
+};
+
+// AlQuran.cloud API'deki doğru edition identifier'lar
+const Map<String, String> kTranslationEditions = {
+  'tr.diyanet': 'tr.diyanet',
+  'tr.yazir': 'tr.yazir',
+  'en.sahih': 'en.sahih',
+  'en.pickthall': 'en.pickthall',
+  'ar.muyassar': 'ar.muyassar',
+};
+
+// 30 Cüzün sure aralıkları
+const List<Map<String, dynamic>> kJuzData = [
+  {
+    'juz': 1,
+    'startSurah': 1,
+    'startAyah': 1,
+    'endSurah': 2,
+    'endAyah': 141,
+    'name': 'الم'
+  },
+  {
+    'juz': 2,
+    'startSurah': 2,
+    'startAyah': 142,
+    'endSurah': 2,
+    'endAyah': 252,
+    'name': 'سَيَقُولُ'
+  },
+  {
+    'juz': 3,
+    'startSurah': 2,
+    'startAyah': 253,
+    'endSurah': 3,
+    'endAyah': 92,
+    'name': 'تِلْكَ الرُّسُلُ'
+  },
+  {
+    'juz': 4,
+    'startSurah': 3,
+    'startAyah': 93,
+    'endSurah': 4,
+    'endAyah': 23,
+    'name': 'لَنْ تَنَالُوا'
+  },
+  {
+    'juz': 5,
+    'startSurah': 4,
+    'startAyah': 24,
+    'endSurah': 4,
+    'endAyah': 147,
+    'name': 'وَالْمُحْصَنَاتُ'
+  },
+  {
+    'juz': 6,
+    'startSurah': 4,
+    'startAyah': 148,
+    'endSurah': 5,
+    'endAyah': 81,
+    'name': 'لَا يُحِبُّ اللَّهُ'
+  },
+  {
+    'juz': 7,
+    'startSurah': 5,
+    'startAyah': 82,
+    'endSurah': 6,
+    'endAyah': 110,
+    'name': 'وَلَوْ أَنَّنَا'
+  },
+  {
+    'juz': 8,
+    'startSurah': 6,
+    'startAyah': 111,
+    'endSurah': 7,
+    'endAyah': 87,
+    'name': 'وَلَوْ أَنَّنَا'
+  },
+  {
+    'juz': 9,
+    'startSurah': 7,
+    'startAyah': 88,
+    'endSurah': 8,
+    'endAyah': 40,
+    'name': 'قَالَ الْمَلَأُ'
+  },
+  {
+    'juz': 10,
+    'startSurah': 8,
+    'startAyah': 41,
+    'endSurah': 9,
+    'endAyah': 92,
+    'name': 'وَاعْلَمُوا'
+  },
+  {
+    'juz': 11,
+    'startSurah': 9,
+    'startAyah': 93,
+    'endSurah': 11,
+    'endAyah': 5,
+    'name': 'يَعْتَذِرُونَ'
+  },
+  {
+    'juz': 12,
+    'startSurah': 11,
+    'startAyah': 6,
+    'endSurah': 12,
+    'endAyah': 52,
+    'name': 'وَمَا مِنْ دَابَّةٍ'
+  },
+  {
+    'juz': 13,
+    'startSurah': 12,
+    'startAyah': 53,
+    'endSurah': 14,
+    'endAyah': 52,
+    'name': 'وَمَا أُبَرِّئُ'
+  },
+  {
+    'juz': 14,
+    'startSurah': 15,
+    'startAyah': 1,
+    'endSurah': 16,
+    'endAyah': 128,
+    'name': 'رُبَمَا'
+  },
+  {
+    'juz': 15,
+    'startSurah': 17,
+    'startAyah': 1,
+    'endSurah': 18,
+    'endAyah': 74,
+    'name': 'سُبْحَانَ الَّذِي'
+  },
+  {
+    'juz': 16,
+    'startSurah': 18,
+    'startAyah': 75,
+    'endSurah': 20,
+    'endAyah': 135,
+    'name': 'قَالَ أَلَمْ'
+  },
+  {
+    'juz': 17,
+    'startSurah': 21,
+    'startAyah': 1,
+    'endSurah': 22,
+    'endAyah': 78,
+    'name': 'اقْتَرَبَ'
+  },
+  {
+    'juz': 18,
+    'startSurah': 23,
+    'startAyah': 1,
+    'endSurah': 25,
+    'endAyah': 20,
+    'name': 'قَدْ أَفْلَحَ'
+  },
+  {
+    'juz': 19,
+    'startSurah': 25,
+    'startAyah': 21,
+    'endSurah': 27,
+    'endAyah': 55,
+    'name': 'وَقَالَ الَّذِينَ'
+  },
+  {
+    'juz': 20,
+    'startSurah': 27,
+    'startAyah': 56,
+    'endSurah': 29,
+    'endAyah': 45,
+    'name': 'أَمَّنْ خَلَقَ'
+  },
+  {
+    'juz': 21,
+    'startSurah': 29,
+    'startAyah': 46,
+    'endSurah': 33,
+    'endAyah': 30,
+    'name': 'اتْلُ مَا أُوحِيَ'
+  },
+  {
+    'juz': 22,
+    'startSurah': 33,
+    'startAyah': 31,
+    'endSurah': 36,
+    'endAyah': 27,
+    'name': 'وَمَنْ يَقْنُتْ'
+  },
+  {
+    'juz': 23,
+    'startSurah': 36,
+    'startAyah': 28,
+    'endSurah': 39,
+    'endAyah': 31,
+    'name': 'وَمَا لِيَ'
+  },
+  {
+    'juz': 24,
+    'startSurah': 39,
+    'startAyah': 32,
+    'endSurah': 41,
+    'endAyah': 46,
+    'name': 'فَمَنْ أَظْلَمُ'
+  },
+  {
+    'juz': 25,
+    'startSurah': 41,
+    'startAyah': 47,
+    'endSurah': 45,
+    'endAyah': 37,
+    'name': 'إِلَيْهِ يُرَدُّ'
+  },
+  {
+    'juz': 26,
+    'startSurah': 46,
+    'startAyah': 1,
+    'endSurah': 51,
+    'endAyah': 30,
+    'name': 'حم'
+  },
+  {
+    'juz': 27,
+    'startSurah': 51,
+    'startAyah': 31,
+    'endSurah': 57,
+    'endAyah': 29,
+    'name': 'قَالَ فَمَا خَطْبُكُمْ'
+  },
+  {
+    'juz': 28,
+    'startSurah': 58,
+    'startAyah': 1,
+    'endSurah': 66,
+    'endAyah': 12,
+    'name': 'قَدْ سَمِعَ اللَّهُ'
+  },
+  {
+    'juz': 29,
+    'startSurah': 67,
+    'startAyah': 1,
+    'endSurah': 77,
+    'endAyah': 50,
+    'name': 'تَبَارَكَ الَّذِي'
+  },
+  {
+    'juz': 30,
+    'startSurah': 78,
+    'startAyah': 1,
+    'endSurah': 114,
+    'endAyah': 6,
+    'name': 'عَمَّ'
+  },
+];
+
+// Namaz vakitleri için ikon eşleştirmesi
+const Map<String, IconData> kPrayerIcons = {
+  'Imsak': Icons.bedtime_outlined,
+  'Fajr': Icons.wb_twilight,
+  'Sunrise': Icons.wb_sunny_outlined,
+  'Dhuhr': Icons.light_mode,
+  'Asr': Icons.sunny_snowing,
+  'Maghrib': Icons.nights_stay_outlined,
+  'Isha': Icons.dark_mode_outlined,
+  'Midnight': Icons.nightlight_round,
+};
+
+// Namaz vakitleri için renk eşleştirmesi
+const Map<String, Color> kPrayerColors = {
+  'Imsak': Color(0xFF6C5CE7),
+  'Fajr': Color(0xFFE17055),
+  'Sunrise': Color(0xFFFDAB3E),
+  'Dhuhr': Color(0xFF00B894),
+  'Asr': Color(0xFF0984E3),
+  'Maghrib': Color(0xFFD63031),
+  'Isha': Color(0xFF2D3436),
+  'Midnight': Color(0xFF6C5CE7),
 };
 
 String ayahAudioUrl(int surahNum, int ayahNum,
@@ -436,7 +681,7 @@ String surahAudioUrl(int surahNum, {String folder = 'afs'}) {
 }
 
 // ─────────────────────────────────────────────
-//  GÜNLÜK VERİLER (offline fallback)
+//  GÜNLÜK VERİLER
 // ─────────────────────────────────────────────
 const List<Map<String, String>> kDailyVerses = [
   {
@@ -555,7 +800,7 @@ const List<Map<String, String>> kDuas = [
     'title_tr': 'Uyku Duası',
     'title_en': 'Sleep Supplication',
     'ar': 'بِاسْمِكَ اللّٰهُمَّ أَمُوتُ وَأَحْيَا',
-    'tr': 'Allah\'ım! Senin adınla ölür ve dirilirm.',
+    'tr': 'Allah\'ım! Senin adınla ölür ve dirilirim.',
     'en': 'In Your name, O Allah, I die and I live.',
     'src': 'Buhârî 6324',
   },
@@ -635,7 +880,7 @@ const List<Map<String, String>> kDuas = [
     'ar':
         'اللَّهُ أَكْبَرُ، اللَّهُ أَكْبَرُ، اللَّهُ أَكْبَرُ، سُبْحَانَ الَّذِي سَخَّرَ لَنَا هَذَا',
     'tr':
-        'Allah büyüktür, Allah büyüktür, Allah büyüktür. Bunu bizim için boyun eğdireni tesbih ederim.',
+        'Allah büyüktür (3 kez). Bunu bizim için boyun eğdireni tesbih ederiz.',
     'en': 'Allah is Greatest (x3). Glory to Him who has subjected this for us.',
     'src': 'Müslim 1342',
   },
@@ -690,8 +935,6 @@ const Map<String, Map<String, String>> kZikirList = {
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   SystemChrome.setPreferredOrientations([DeviceOrientation.portraitUp]);
-
-  // AdMob başlat
   await AdManager().initialize();
 
   final prefs = await SharedPreferences.getInstance();
@@ -773,8 +1016,8 @@ class _QuranAppState extends State<QuranApp> {
 
   @override
   Widget build(BuildContext context) {
-    final gold = const Color(0xFFC9A84C);
-    final teal = const Color(0xFF1ABC9C);
+    const gold = Color(0xFFC9A84C);
+    const teal = Color(0xFF1ABC9C);
 
     return MaterialApp(
       debugShowCheckedModeBanner: false,
@@ -995,11 +1238,7 @@ class AyahData {
 }
 
 // ─────────────────────────────────────────────
-//  QURAN SCREEN
-//  ✦ Kuran okuma ekranında banner YOKTUR —
-//    okumayı böldüğü için kullanıcı deneyimi
-//    açısından en kötü yerdir.
-//  ✦ Sure listesinde geçiş reklamı tetiklenir.
+//  QURAN SCREEN  (Sure + Cüz + Mushaf + Sesli)
 // ─────────────────────────────────────────────
 class QuranScreen extends StatefulWidget {
   final String reciter;
@@ -1025,7 +1264,7 @@ class _QuranScreenState extends State<QuranScreen>
   @override
   void initState() {
     super.initState();
-    _tab = TabController(length: 3, vsync: this);
+    _tab = TabController(length: 4, vsync: this);
     _search.addListener(() => _filter(_search.text));
     _loadMeta();
     _loadLastPos();
@@ -1053,11 +1292,12 @@ class _QuranScreenState extends State<QuranScreen>
         throw Exception('HTTP ${r.statusCode}');
       }
     } catch (e) {
-      if (mounted)
+      if (mounted) {
         setState(() {
           _loading = false;
           _error = e.toString();
         });
+      }
     }
   }
 
@@ -1099,11 +1339,14 @@ class _QuranScreenState extends State<QuranScreen>
           controller: _tab,
           indicatorColor: gold,
           labelColor: gold,
+          isScrollable: true,
+          tabAlignment: TabAlignment.center,
           unselectedLabelColor:
               Theme.of(context).textTheme.bodySmall?.color?.withOpacity(0.5),
           labelStyle: GoogleFonts.tajawal(fontWeight: FontWeight.w700),
           tabs: [
             Tab(text: L.surahList),
+            Tab(text: L.juzList),
             Tab(text: L.mushaf),
             Tab(text: L.audio),
           ],
@@ -1113,6 +1356,10 @@ class _QuranScreenState extends State<QuranScreen>
         controller: _tab,
         children: [
           _buildSurahListTab(),
+          JuzListTab(
+              surahs: _surahs,
+              reciter: widget.reciter,
+              translation: widget.translation),
           MushafTab(reciter: widget.reciter),
           AudioTab(surahs: _surahs),
         ],
@@ -1122,9 +1369,8 @@ class _QuranScreenState extends State<QuranScreen>
 
   Widget _buildSurahListTab() {
     if (_loading) return _loadingCenter();
-    if (_error.isNotEmpty) {
-      return _errorCenter(_error, _loadMeta);
-    }
+    if (_error.isNotEmpty) return _errorCenter(_error, _loadMeta);
+
     final gold = Theme.of(context).colorScheme.primary;
     return Column(
       children: [
@@ -1198,7 +1444,6 @@ class _QuranScreenState extends State<QuranScreen>
             itemBuilder: (ctx, i) => _SurahCard(
               surah: _filtered[i],
               onTap: () {
-                // Geçiş reklamı: 5 sure açılışında 1 kez — okumayı bozmaz
                 AdManager().maybeShowInterstitial(context);
                 Navigator.push(
                   ctx,
@@ -1219,6 +1464,671 @@ class _QuranScreenState extends State<QuranScreen>
   }
 }
 
+// ─────────────────────────────────────────────
+//  CÜZ LİSTESİ TAB
+// ─────────────────────────────────────────────
+class JuzListTab extends StatelessWidget {
+  final List<SurahMeta> surahs;
+  final String reciter;
+  final String translation;
+
+  const JuzListTab({
+    super.key,
+    required this.surahs,
+    required this.reciter,
+    required this.translation,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final gold = Theme.of(context).colorScheme.primary;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+
+    if (surahs.isEmpty) return _loadingCenter();
+
+    return ListView.builder(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      itemCount: 30,
+      itemBuilder: (ctx, i) {
+        final juz = kJuzData[i];
+        final juzNum = juz['juz'] as int;
+        final startSurahNum = juz['startSurah'] as int;
+        final startAyah = juz['startAyah'] as int;
+        final endSurahNum = juz['endSurah'] as int;
+        final endAyah = juz['endAyah'] as int;
+        final juzName = juz['name'] as String;
+
+        final startSurah = surahs.firstWhere(
+          (s) => s.number == startSurahNum,
+          orElse: () => surahs.first,
+        );
+        final endSurah = surahs.firstWhere(
+          (s) => s.number == endSurahNum,
+          orElse: () => surahs.last,
+        );
+
+        return Card(
+          margin: const EdgeInsets.only(bottom: 8),
+          child: InkWell(
+            onTap: () {
+              Navigator.push(
+                ctx,
+                MaterialPageRoute(
+                  builder: (_) => JuzDetailScreen(
+                    juzNumber: juzNum,
+                    startSurah: startSurah,
+                    startAyah: startAyah,
+                    reciter: reciter,
+                    translation: translation,
+                    surahs: surahs,
+                  ),
+                ),
+              );
+            },
+            borderRadius: BorderRadius.circular(14),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+              child: Row(
+                children: [
+                  // Cüz numarası dairesi
+                  Container(
+                    width: 50,
+                    height: 50,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      gradient: LinearGradient(
+                        colors: [gold, gold.withOpacity(0.6)],
+                        begin: Alignment.topLeft,
+                        end: Alignment.bottomRight,
+                      ),
+                    ),
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Text(
+                          '$juzNum',
+                          style: const TextStyle(
+                            fontSize: 18,
+                            fontWeight: FontWeight.w800,
+                            color: Color(0xFF0D1117),
+                          ),
+                        ),
+                        Text(
+                          L.juz,
+                          style: const TextStyle(
+                            fontSize: 8,
+                            fontWeight: FontWeight.w700,
+                            color: Color(0xFF0D1117),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(width: 14),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          '${startSurah.englishName}  –  ${endSurah.englishName}',
+                          style: const TextStyle(
+                              fontSize: 14, fontWeight: FontWeight.w600),
+                        ),
+                        const SizedBox(height: 3),
+                        Text(
+                          '${startSurah.number}:$startAyah  →  ${endSurah.number}:$endAyah',
+                          style: TextStyle(
+                              fontSize: 11,
+                              color: isDark ? Colors.white38 : Colors.black38),
+                        ),
+                      ],
+                    ),
+                  ),
+                  Column(
+                    crossAxisAlignment: CrossAxisAlignment.end,
+                    children: [
+                      Text(
+                        juzName,
+                        style: GoogleFonts.notoNaskhArabic(
+                            fontSize: 20, color: gold),
+                        textDirection: TextDirection.rtl,
+                      ),
+                      const SizedBox(height: 4),
+                      Icon(Icons.play_circle_outline, color: gold, size: 22),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+}
+
+// ─────────────────────────────────────────────
+//  CÜZ DETAY EKRANI
+// ─────────────────────────────────────────────
+class JuzDetailScreen extends StatefulWidget {
+  final int juzNumber;
+  final SurahMeta startSurah;
+  final int startAyah;
+  final String reciter;
+  final String translation;
+  final List<SurahMeta> surahs;
+
+  const JuzDetailScreen({
+    super.key,
+    required this.juzNumber,
+    required this.startSurah,
+    required this.startAyah,
+    required this.reciter,
+    required this.translation,
+    required this.surahs,
+  });
+
+  @override
+  State<JuzDetailScreen> createState() => _JuzDetailScreenState();
+}
+
+class _JuzDetailScreenState extends State<JuzDetailScreen> {
+  List<Map<String, dynamic>> _verses = [];
+  bool _loading = true;
+  String _error = '';
+  final _player = AudioPlayer();
+  int _playingIdx = -1;
+  bool _isPlaying = false;
+  double _fontSize = 24;
+  final _scrollCtrl = ScrollController();
+
+  @override
+  void initState() {
+    super.initState();
+    _fetchJuz();
+    _player.playerStateStream.listen((s) {
+      if (mounted) setState(() => _isPlaying = s.playing);
+    });
+    _player.processingStateStream.listen((ps) {
+      if (ps == ProcessingState.completed) {
+        final next = _playingIdx + 1;
+        if (next < _verses.length) _playVerse(next);
+      }
+    });
+  }
+
+  Future<void> _fetchJuz() async {
+    setState(() {
+      _loading = true;
+      _error = '';
+    });
+    try {
+      // AlQuran.cloud - cüz endpoint
+      final url =
+          'https://api.alquran.cloud/v1/juz/${widget.juzNumber}/quran-uthmani';
+      final r =
+          await http.get(Uri.parse(url)).timeout(const Duration(seconds: 25));
+      if (r.statusCode != 200) throw Exception('HTTP ${r.statusCode}');
+
+      final data = jsonDecode(r.body)['data'];
+      final ayahs = data['ayahs'] as List;
+
+      // Meal de çek
+      String translationText = '';
+      List<dynamic> transAyahs = [];
+      try {
+        final transUrl =
+            'https://api.alquran.cloud/v1/juz/${widget.juzNumber}/${widget.translation}';
+        final tr2 = await http
+            .get(Uri.parse(transUrl))
+            .timeout(const Duration(seconds: 20));
+        if (tr2.statusCode == 200) {
+          final tData = jsonDecode(tr2.body)['data'];
+          transAyahs = tData['ayahs'] as List;
+        }
+      } catch (_) {}
+
+      final List<Map<String, dynamic>> verses = [];
+      for (int i = 0; i < ayahs.length; i++) {
+        final a = ayahs[i];
+        final surahNum = a['surah']?['number'] as int? ?? 0;
+        final surahName = a['surah']?['name'] as String? ?? '';
+        final surahEnName = a['surah']?['englishName'] as String? ?? '';
+        String meaning = '';
+        if (i < transAyahs.length) {
+          meaning = (transAyahs[i]['text'] as String? ?? '')
+              .replaceAll(RegExp(r'^\d+\.\s*'), '');
+        }
+        verses.add({
+          'arabic': a['text'] as String? ?? '',
+          'translation': meaning,
+          'surahNumber': surahNum,
+          'surahName': surahName,
+          'surahEnName': surahEnName,
+          'ayahNum': a['numberInSurah'] as int? ?? 0,
+          'globalNum': a['number'] as int? ?? 0,
+          'juzNum': a['juz'] as int? ?? widget.juzNumber,
+          'pageNum': a['page'] as int? ?? 0,
+        });
+      }
+
+      if (mounted) {
+        setState(() {
+          _verses = verses;
+          _loading = false;
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _loading = false;
+          _error = e.toString();
+        });
+      }
+    }
+  }
+
+  Future<void> _playVerse(int idx) async {
+    if (idx < 0 || idx >= _verses.length) return;
+    if (_playingIdx == idx && _isPlaying) {
+      await _player.pause();
+      return;
+    }
+    setState(() => _playingIdx = idx);
+    try {
+      final s = _verses[idx]['surahNumber'] as int;
+      final a = _verses[idx]['ayahNum'] as int;
+      await _player.setUrl(ayahAudioUrl(s, a));
+      await _player.play();
+    } catch (_) {}
+  }
+
+  @override
+  void dispose() {
+    _player.dispose();
+    _scrollCtrl.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final gold = Theme.of(context).colorScheme.primary;
+    final teal = Theme.of(context).colorScheme.secondary;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+
+    return Scaffold(
+      appBar: AppBar(
+        title: Text('${L.juz} ${widget.juzNumber}'),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.text_increase, size: 20),
+            onPressed: () => setState(
+                () => _fontSize = (_fontSize + 2).clamp(16, 36).toDouble()),
+          ),
+          IconButton(
+            icon: const Icon(Icons.text_decrease, size: 20),
+            onPressed: () => setState(
+                () => _fontSize = (_fontSize - 2).clamp(16, 36).toDouble()),
+          ),
+        ],
+      ),
+      body: _loading
+          ? _loadingCenter()
+          : _error.isNotEmpty
+              ? _errorCenter(_error, _fetchJuz)
+              : Column(
+                  children: [
+                    // Cüz başlık kartı
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 20, vertical: 10),
+                      color: isDark
+                          ? const Color(0xFF161B22)
+                          : const Color(0xFFFAF7F0),
+                      child: Row(
+                        children: [
+                          Container(
+                            width: 44,
+                            height: 44,
+                            decoration: BoxDecoration(
+                              shape: BoxShape.circle,
+                              gradient: LinearGradient(
+                                  colors: [gold, gold.withOpacity(0.6)]),
+                            ),
+                            child: Center(
+                              child: Text(
+                                '${widget.juzNumber}',
+                                style: const TextStyle(
+                                  fontSize: 18,
+                                  fontWeight: FontWeight.w800,
+                                  color: Color(0xFF0D1117),
+                                ),
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  '${L.juz} ${widget.juzNumber}  •  ${_verses.length} ${L.verses}',
+                                  style: TextStyle(
+                                      fontSize: 13,
+                                      fontWeight: FontWeight.w600,
+                                      color: gold),
+                                ),
+                                Text(
+                                  '${widget.startSurah.englishName} ${widget.startAyah}\'den başlıyor',
+                                  style: TextStyle(
+                                      fontSize: 11,
+                                      color: isDark
+                                          ? Colors.white38
+                                          : Colors.black38),
+                                ),
+                              ],
+                            ),
+                          ),
+                          Text(
+                            kJuzData[widget.juzNumber - 1]['name'] as String,
+                            style: GoogleFonts.notoNaskhArabic(
+                                fontSize: 20, color: gold),
+                            textDirection: TextDirection.rtl,
+                          ),
+                        ],
+                      ),
+                    ),
+                    Expanded(
+                      child: ListView.builder(
+                        controller: _scrollCtrl,
+                        padding: const EdgeInsets.fromLTRB(12, 8, 12, 100),
+                        itemCount: _verses.length,
+                        itemBuilder: (ctx, i) {
+                          final v = _verses[i];
+                          final isFirstInSurah = i == 0 ||
+                              _verses[i - 1]['surahNumber'] != v['surahNumber'];
+
+                          return Column(
+                            crossAxisAlignment: CrossAxisAlignment.stretch,
+                            children: [
+                              // Sure başlığı
+                              if (isFirstInSurah)
+                                Container(
+                                  margin:
+                                      const EdgeInsets.symmetric(vertical: 8),
+                                  padding: const EdgeInsets.symmetric(
+                                      vertical: 10, horizontal: 16),
+                                  decoration: BoxDecoration(
+                                    gradient: LinearGradient(
+                                      colors: isDark
+                                          ? [
+                                              const Color(0xFF1A2332),
+                                              const Color(0xFF0D1117)
+                                            ]
+                                          : [
+                                              const Color(0xFFFAF3E0),
+                                              const Color(0xFFEDE3D0)
+                                            ],
+                                    ),
+                                    borderRadius: BorderRadius.circular(12),
+                                    border: Border.all(
+                                        color: gold.withOpacity(0.3)),
+                                  ),
+                                  child: Column(
+                                    children: [
+                                      Text(
+                                        v['surahName'] as String,
+                                        style: GoogleFonts.notoNaskhArabic(
+                                            fontSize: 22,
+                                            color: gold,
+                                            fontWeight: FontWeight.w700),
+                                        textDirection: TextDirection.rtl,
+                                      ),
+                                      const SizedBox(height: 4),
+                                      Text(
+                                        v['surahEnName'] as String,
+                                        style: TextStyle(
+                                            fontSize: 13,
+                                            color: isDark
+                                                ? Colors.white54
+                                                : Colors.black45),
+                                      ),
+                                      // Besmele (Sure 9 hariç)
+                                      if (v['ayahNum'] == 1 &&
+                                          v['surahNumber'] != 9) ...[
+                                        const SizedBox(height: 8),
+                                        Text(
+                                          'بِسْمِ اللَّهِ الرَّحْمَٰنِ الرَّحِيمِ',
+                                          style: GoogleFonts.notoNaskhArabic(
+                                              fontSize: 16,
+                                              color: isDark
+                                                  ? Colors.white70
+                                                  : Colors.black54),
+                                          textDirection: TextDirection.rtl,
+                                        ),
+                                      ],
+                                    ],
+                                  ),
+                                ),
+
+                              // Ayet kartı
+                              _JuzAyahCard(
+                                verse: v,
+                                isPlaying: _playingIdx == i && _isPlaying,
+                                fontSize: _fontSize,
+                                isDark: isDark,
+                                gold: gold,
+                                teal: teal,
+                                onPlay: () => _playVerse(i),
+                                onShare: () => Share.share(
+                                    '${v['arabic']}\n${v['translation']}\n(${v['surahEnName']} ${v['ayahNum']})'),
+                                onCopy: () {
+                                  Clipboard.setData(ClipboardData(
+                                      text:
+                                          '${v['arabic']}\n${v['translation']}'));
+                                  ScaffoldMessenger.of(context)
+                                      .showSnackBar(SnackBar(
+                                    content: Text(L.copied),
+                                    duration: const Duration(seconds: 1),
+                                  ));
+                                },
+                              ),
+                            ],
+                          );
+                        },
+                      ),
+                    ),
+                  ],
+                ),
+      bottomNavigationBar: _playingIdx >= 0 && _playingIdx < _verses.length
+          ? _JuzMiniPlayer(
+              verse: _verses[_playingIdx],
+              isPlaying: _isPlaying,
+              onPlayPause: () => _playVerse(_playingIdx),
+              onPrev: () => _playVerse(_playingIdx - 1),
+              onNext: () => _playVerse(_playingIdx + 1),
+            )
+          : null,
+    );
+  }
+}
+
+class _JuzAyahCard extends StatelessWidget {
+  final Map<String, dynamic> verse;
+  final bool isPlaying;
+  final double fontSize;
+  final bool isDark;
+  final Color gold;
+  final Color teal;
+  final VoidCallback onPlay;
+  final VoidCallback onShare;
+  final VoidCallback onCopy;
+
+  const _JuzAyahCard({
+    required this.verse,
+    required this.isPlaying,
+    required this.fontSize,
+    required this.isDark,
+    required this.gold,
+    required this.teal,
+    required this.onPlay,
+    required this.onShare,
+    required this.onCopy,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedContainer(
+      duration: const Duration(milliseconds: 250),
+      margin: const EdgeInsets.only(bottom: 8),
+      decoration: BoxDecoration(
+        color: isPlaying
+            ? (isDark ? teal.withOpacity(0.08) : teal.withOpacity(0.05))
+            : (isDark ? const Color(0xFF161B22) : Colors.white),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(
+          color: isPlaying
+              ? teal.withOpacity(0.4)
+              : (isDark
+                  ? Colors.white.withOpacity(0.07)
+                  : Colors.black.withOpacity(0.07)),
+        ),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(12),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.end,
+          children: [
+            Text(
+              verse['arabic'] as String,
+              textDirection: TextDirection.rtl,
+              textAlign: TextAlign.right,
+              style: GoogleFonts.notoNaskhArabic(
+                  fontSize: fontSize,
+                  height: 2.0,
+                  color: isDark
+                      ? const Color(0xFFE8D5A3)
+                      : const Color(0xFF3D2800)),
+            ),
+            if ((verse['translation'] as String).isNotEmpty) ...[
+              const SizedBox(height: 8),
+              Align(
+                alignment: Alignment.centerLeft,
+                child: Text(
+                  verse['translation'] as String,
+                  style: TextStyle(
+                      fontSize: 12,
+                      height: 1.7,
+                      color: isDark ? Colors.white60 : Colors.black54),
+                ),
+              ),
+            ],
+            const SizedBox(height: 8),
+            Row(
+              children: [
+                // Sure:Ayet etiketi
+                Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                  decoration: BoxDecoration(
+                    color: gold.withOpacity(0.12),
+                    borderRadius: BorderRadius.circular(20),
+                    border: Border.all(color: gold.withOpacity(0.3)),
+                  ),
+                  child: Text(
+                    '${verse['surahNumber']}:${verse['ayahNum']}',
+                    style: TextStyle(
+                        fontSize: 10, fontWeight: FontWeight.w700, color: gold),
+                  ),
+                ),
+                // Sayfa bilgisi
+                const SizedBox(width: 6),
+                Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                  decoration: BoxDecoration(
+                    color: teal.withOpacity(0.1),
+                    borderRadius: BorderRadius.circular(20),
+                  ),
+                  child: Text(
+                    '${L.page} ${verse['pageNum']}',
+                    style: TextStyle(fontSize: 10, color: teal),
+                  ),
+                ),
+                const Spacer(),
+                _IconBtn(
+                  icon: isPlaying ? Icons.pause_circle : Icons.play_circle,
+                  color: isPlaying ? teal : gold,
+                  size: 28,
+                  onTap: onPlay,
+                ),
+                _IconBtn(icon: Icons.copy_outlined, onTap: onCopy),
+                _IconBtn(icon: Icons.share_outlined, onTap: onShare),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _JuzMiniPlayer extends StatelessWidget {
+  final Map<String, dynamic> verse;
+  final bool isPlaying;
+  final VoidCallback onPlayPause;
+  final VoidCallback onPrev;
+  final VoidCallback onNext;
+
+  const _JuzMiniPlayer({
+    required this.verse,
+    required this.isPlaying,
+    required this.onPlayPause,
+    required this.onPrev,
+    required this.onNext,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final gold = Theme.of(context).colorScheme.primary;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    return Container(
+      height: 60,
+      padding: const EdgeInsets.symmetric(horizontal: 16),
+      decoration: BoxDecoration(
+        color: isDark ? const Color(0xFF161B22) : Colors.white,
+        border: Border(top: BorderSide(color: gold.withOpacity(0.25))),
+      ),
+      child: Row(
+        children: [
+          Icon(Icons.music_note, color: gold, size: 16),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              '${verse['surahEnName']} — ${L.verse} ${verse['ayahNum']}',
+              style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
+          IconButton(
+              onPressed: onPrev,
+              icon: const Icon(Icons.skip_previous, size: 22)),
+          IconButton(
+            onPressed: onPlayPause,
+            icon: Icon(isPlaying ? Icons.pause_circle : Icons.play_circle,
+                size: 34, color: gold),
+          ),
+          IconButton(
+              onPressed: onNext, icon: const Icon(Icons.skip_next, size: 22)),
+        ],
+      ),
+    );
+  }
+}
+
+// ─────────────────────────────────────────────
+//  SURAH CARD
+// ─────────────────────────────────────────────
 class _SurahCard extends StatelessWidget {
   final SurahMeta surah;
   final VoidCallback onTap;
@@ -1325,8 +2235,6 @@ class _SurahCard extends StatelessWidget {
 
 // ─────────────────────────────────────────────
 //  SURAH DETAIL
-//  ✦ Aktif okuma ekranında reklam YOK —
-//    ibadet ortamı korunur.
 // ─────────────────────────────────────────────
 class SurahDetailScreen extends StatefulWidget {
   final SurahMeta surah;
@@ -1358,6 +2266,7 @@ class _SurahDetailScreenState extends State<SurahDetailScreen> {
   final _scrollCtrl = ScrollController();
   final Map<int, GlobalKey> _keys = {};
   double _fontSize = 24;
+  bool _showTranslation = true;
 
   @override
   void initState() {
@@ -1384,8 +2293,10 @@ class _SurahDetailScreenState extends State<SurahDetailScreen> {
       _error = '';
     });
     try {
+      // Doğru translation identifier kullan
+      final transId = kTranslationEditions[widget.translation] ?? 'tr.diyanet';
       final url =
-          'https://api.alquran.cloud/v1/surah/${widget.surah.number}/editions/quran-uthmani,${widget.translation}';
+          'https://api.alquran.cloud/v1/surah/${widget.surah.number}/editions/quran-uthmani,$transId';
       final r =
           await http.get(Uri.parse(url)).timeout(const Duration(seconds: 20));
       if (r.statusCode != 200) throw Exception('HTTP ${r.statusCode}');
@@ -1393,7 +2304,7 @@ class _SurahDetailScreenState extends State<SurahDetailScreen> {
       final uthmani =
           data.firstWhere((e) => e['edition']['identifier'] == 'quran-uthmani');
       final trans = data.firstWhere(
-        (e) => e['edition']['identifier'] == widget.translation,
+        (e) => e['edition']['identifier'] == transId,
         orElse: () => uthmani,
       );
       final uthmaniAyahs = uthmani['ayahs'] as List;
@@ -1403,13 +2314,22 @@ class _SurahDetailScreenState extends State<SurahDetailScreen> {
       for (int i = 0; i < uthmaniAyahs.length; i++) {
         final u = uthmaniAyahs[i];
         final t = i < transAyahs.length ? transAyahs[i] : u;
+        // Sayı prefixini temizle (1. , 2. gibi başlangıçlar)
+        String mealText =
+            (t['text'] as String? ?? '').replaceAll(RegExp(r'^\d+\.\s*'), '');
+        // HTML entity temizle
+        mealText = mealText
+            .replaceAll('&amp;', '&')
+            .replaceAll('&lt;', '<')
+            .replaceAll('&gt;', '>')
+            .replaceAll('&quot;', '"')
+            .replaceAll('&#39;', "'");
+
         ayahs.add(AyahData(
           number: u['number'] as int,
           numberInSurah: u['numberInSurah'] as int,
           arabic: u['text'] as String,
-          translation:
-              (t['text'] as String?)?.replaceAll(RegExp(r'^\d+\.\s*'), '') ??
-                  '',
+          translation: mealText,
           audioUrl: ayahAudioUrl(
             widget.surah.number,
             u['numberInSurah'] as int,
@@ -1430,11 +2350,12 @@ class _SurahDetailScreenState extends State<SurahDetailScreen> {
         }
       }
     } catch (e) {
-      if (mounted)
+      if (mounted) {
         setState(() {
           _loading = false;
           _error = e.toString();
         });
+      }
     }
   }
 
@@ -1465,7 +2386,6 @@ class _SurahDetailScreenState extends State<SurahDetailScreen> {
 
   Future<void> _playAyah(int idx) async {
     if (idx < 0 || idx >= _ayahs.length) return;
-
     if (_playingIdx == idx && _isPlaying) {
       await _player.pause();
       return;
@@ -1474,14 +2394,12 @@ class _SurahDetailScreenState extends State<SurahDetailScreen> {
       await _player.play();
       return;
     }
-
     setState(() {
       _playingIdx = idx;
       _audioLoading = true;
     });
     _scrollTo(idx);
     await _saveLastPos(idx);
-
     try {
       await _player.setUrl(_ayahs[idx].audioUrl);
       await _player.play();
@@ -1489,7 +2407,7 @@ class _SurahDetailScreenState extends State<SurahDetailScreen> {
     } catch (e) {
       try {
         await _player.setUrl(
-            'https://cdn.islamic.network/quran/audio/128/ar.alafasy/${'${_ayahs[idx].number}'}.mp3');
+            'https://cdn.islamic.network/quran/audio/128/ar.alafasy/${_ayahs[idx].number}.mp3');
         await _player.play();
       } catch (_) {}
       setState(() => _audioLoading = false);
@@ -1537,6 +2455,15 @@ class _SurahDetailScreenState extends State<SurahDetailScreen> {
       appBar: AppBar(
         title: Text(widget.surah.englishName),
         actions: [
+          // Meal göster/gizle
+          IconButton(
+            icon: Icon(
+                _showTranslation ? Icons.translate : Icons.translate_outlined,
+                size: 20),
+            tooltip: 'Meal',
+            onPressed: () =>
+                setState(() => _showTranslation = !_showTranslation),
+          ),
           IconButton(
             icon: const Icon(Icons.text_increase, size: 20),
             onPressed: () => setState(
@@ -1609,6 +2536,7 @@ class _SurahDetailScreenState extends State<SurahDetailScreen> {
                           isLoading: _playingIdx == i && _audioLoading,
                           isBookmarked: _bookmarks.contains(i),
                           fontSize: _fontSize,
+                          showTranslation: _showTranslation,
                           onPlay: () => _playAyah(i),
                           onBookmark: () => _toggleBookmark(i),
                           onShare: () => Share.share(
@@ -1647,6 +2575,7 @@ class _AyahCard extends StatelessWidget {
   final bool isLoading;
   final bool isBookmarked;
   final double fontSize;
+  final bool showTranslation;
   final VoidCallback onPlay;
   final VoidCallback onBookmark;
   final VoidCallback onShare;
@@ -1659,6 +2588,7 @@ class _AyahCard extends StatelessWidget {
     required this.isLoading,
     required this.isBookmarked,
     required this.fontSize,
+    required this.showTranslation,
     required this.onPlay,
     required this.onBookmark,
     required this.onShare,
@@ -1703,7 +2633,7 @@ class _AyahCard extends StatelessWidget {
                       ? const Color(0xFFE8D5A3)
                       : const Color(0xFF3D2800)),
             ),
-            if (ayah.translation.isNotEmpty) ...[
+            if (showTranslation && ayah.translation.isNotEmpty) ...[
               const SizedBox(height: 10),
               Align(
                 alignment: Alignment.centerLeft,
@@ -1786,9 +2716,7 @@ class _MiniPlayer extends StatelessWidget {
       padding: const EdgeInsets.symmetric(horizontal: 16),
       decoration: BoxDecoration(
         color: isDark ? const Color(0xFF161B22) : Colors.white,
-        border: Border(
-          top: BorderSide(color: gold.withOpacity(0.25)),
-        ),
+        border: Border(top: BorderSide(color: gold.withOpacity(0.25))),
       ),
       child: Row(
         children: [
@@ -1830,7 +2758,7 @@ class _MiniPlayer extends StatelessWidget {
 }
 
 // ─────────────────────────────────────────────
-//  MUSHAF TAB
+//  MUSHAF TAB (Cüz + Sayfa göstergeli)
 // ─────────────────────────────────────────────
 class MushafTab extends StatefulWidget {
   final String reciter;
@@ -1851,6 +2779,9 @@ class _MushafTabState extends State<MushafTab> {
   int _playingIdx = -1;
   bool _isPlaying = false;
   double _fontSize = 22.0;
+  int _currentJuz = 1;
+  int _currentSurah = 1;
+  String _currentSurahName = 'Al-Fatihah';
 
   @override
   void initState() {
@@ -1868,41 +2799,65 @@ class _MushafTabState extends State<MushafTab> {
   }
 
   Future<void> _loadPage(int page) async {
-    if (mounted)
+    if (mounted) {
       setState(() {
         _loading = true;
         _error = '';
         _verses = [];
       });
+    }
     try {
       final url =
-          'https://api.quran.com/api/v4/verses/by_page/$page?mushaf_id=3&fields=text_uthmani,verse_key,juz_number&per_page=50';
+          'https://api.quran.com/api/v4/verses/by_page/$page?mushaf_id=3&fields=text_uthmani,verse_key,juz_number,chapter_id&per_page=50';
       final r =
           await http.get(Uri.parse(url)).timeout(const Duration(seconds: 20));
       if (r.statusCode != 200) throw Exception('HTTP ${r.statusCode}');
       final data = jsonDecode(r.body);
       final vs = data['verses'] as List;
+
       if (mounted) {
+        // Cüz ve sure bilgisini çıkar
+        int juzNum = 1;
+        int surahNum = 1;
+        String surahName = '';
+
+        if (vs.isNotEmpty) {
+          juzNum = vs.first['juz_number'] as int? ?? 1;
+          surahNum = vs.first['chapter_id'] as int? ?? 1;
+          final key = vs.first['verse_key'] as String? ?? '1:1';
+          // Sure adını verse_key'den çıkaramayız, API'den gelmiyor
+          // Cüz datasından çıkaralım
+          final matchingJuz = kJuzData.firstWhere(
+            (j) => j['juz'] == juzNum,
+            orElse: () => kJuzData.first,
+          );
+          surahName = '';
+        }
+
         setState(() {
           _verses = vs
               .map((v) => {
                     'text': v['text_uthmani'] as String? ?? '',
                     'key': v['verse_key'] as String? ?? '',
-                    'juz': v['juz_number'],
+                    'juz': v['juz_number'] ?? 1,
+                    'surah': v['chapter_id'] ?? 1,
                   })
               .toList();
           _loading = false;
           _page = page;
           _playingIdx = -1;
+          _currentJuz = juzNum;
+          _currentSurah = surahNum;
         });
         _scrollCtrl.jumpTo(0);
       }
     } catch (e) {
-      if (mounted)
+      if (mounted) {
         setState(() {
           _loading = false;
           _error = e.toString();
         });
+      }
     }
   }
 
@@ -1923,6 +2878,46 @@ class _MushafTabState extends State<MushafTab> {
     } catch (_) {}
   }
 
+  // Cüze göre sayfaya git
+  void _jumpToJuz(int juzNum) {
+    // Cüz başlangıç sayfaları (yaklaşık)
+    const juzPages = [
+      1,
+      22,
+      42,
+      62,
+      82,
+      102,
+      121,
+      142,
+      162,
+      182,
+      201,
+      222,
+      241,
+      261,
+      282,
+      302,
+      322,
+      342,
+      362,
+      382,
+      402,
+      422,
+      442,
+      462,
+      482,
+      502,
+      522,
+      542,
+      562,
+      582
+    ];
+    if (juzNum >= 1 && juzNum <= 30) {
+      _loadPage(juzPages[juzNum - 1]);
+    }
+  }
+
   @override
   void dispose() {
     _player.dispose();
@@ -1933,70 +2928,138 @@ class _MushafTabState extends State<MushafTab> {
   @override
   Widget build(BuildContext context) {
     final gold = Theme.of(context).colorScheme.primary;
+    final teal = Theme.of(context).colorScheme.secondary;
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
     return Column(
       children: [
+        // Üst kontrol paneli
         Container(
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
           color: isDark ? const Color(0xFF161B22) : const Color(0xFFF5F1EB),
-          child: Row(
+          child: Column(
             children: [
-              IconButton(
-                onPressed: _page > 1 ? () => _loadPage(_page - 1) : null,
-                icon: const Icon(Icons.chevron_left),
-                visualDensity: VisualDensity.compact,
-              ),
-              Expanded(
-                child: Column(
-                  children: [
-                    SliderTheme(
-                      data: SliderTheme.of(context).copyWith(
-                        trackHeight: 3,
-                        thumbShape:
-                            const RoundSliderThumbShape(enabledThumbRadius: 7),
-                        activeTrackColor: gold,
-                        thumbColor: gold,
-                        inactiveTrackColor: gold.withOpacity(0.2),
-                        overlayShape: SliderComponentShape.noOverlay,
-                      ),
-                      child: Slider(
-                        value: _page.toDouble(),
-                        min: 1,
-                        max: _totalPages.toDouble(),
-                        onChangeEnd: (v) => _loadPage(v.round()),
-                        onChanged: (v) => setState(() => _page = v.round()),
-                      ),
+              // Sayfa navigasyon satırı
+              Row(
+                children: [
+                  IconButton(
+                    onPressed: _page > 1 ? () => _loadPage(_page - 1) : null,
+                    icon: const Icon(Icons.chevron_left),
+                    visualDensity: VisualDensity.compact,
+                  ),
+                  Expanded(
+                    child: Column(
+                      children: [
+                        SliderTheme(
+                          data: SliderTheme.of(context).copyWith(
+                            trackHeight: 3,
+                            thumbShape: const RoundSliderThumbShape(
+                                enabledThumbRadius: 7),
+                            activeTrackColor: gold,
+                            thumbColor: gold,
+                            inactiveTrackColor: gold.withOpacity(0.2),
+                            overlayShape: SliderComponentShape.noOverlay,
+                          ),
+                          child: Slider(
+                            value: _page.toDouble(),
+                            min: 1,
+                            max: _totalPages.toDouble(),
+                            onChangeEnd: (v) => _loadPage(v.round()),
+                            onChanged: (v) => setState(() => _page = v.round()),
+                          ),
+                        ),
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Text(
+                              '${L.page} $_page / $_totalPages',
+                              style: TextStyle(
+                                  fontSize: 11,
+                                  color:
+                                      isDark ? Colors.white54 : Colors.black45),
+                            ),
+                            const SizedBox(width: 10),
+                            Container(
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 8, vertical: 2),
+                              decoration: BoxDecoration(
+                                color: gold.withOpacity(0.12),
+                                borderRadius: BorderRadius.circular(10),
+                              ),
+                              child: Text(
+                                '${L.juz} $_currentJuz',
+                                style: TextStyle(
+                                    fontSize: 10,
+                                    color: gold,
+                                    fontWeight: FontWeight.w700),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ],
                     ),
-                    Text(
-                      '${L.mushaf} $_page / $_totalPages',
-                      style: TextStyle(
-                          fontSize: 11,
-                          color: isDark ? Colors.white54 : Colors.black45),
-                    ),
-                  ],
-                ),
-              ),
-              IconButton(
-                onPressed:
-                    _page < _totalPages ? () => _loadPage(_page + 1) : null,
-                icon: const Icon(Icons.chevron_right),
-                visualDensity: VisualDensity.compact,
-              ),
-              PopupMenuButton<int>(
-                icon: const Icon(Icons.more_vert, size: 20),
-                onSelected: _loadPage,
-                itemBuilder: (_) => [
-                  PopupMenuItem(
-                    child: _PageJumpWidget(
-                        current: _page, total: _totalPages, onJump: _loadPage),
-                    value: null,
+                  ),
+                  IconButton(
+                    onPressed:
+                        _page < _totalPages ? () => _loadPage(_page + 1) : null,
+                    icon: const Icon(Icons.chevron_right),
+                    visualDensity: VisualDensity.compact,
+                  ),
+                  // Menü
+                  PopupMenuButton<dynamic>(
+                    icon: const Icon(Icons.more_vert, size: 20),
+                    itemBuilder: (_) => [
+                      PopupMenuItem(
+                        enabled: false,
+                        child: _PageJumpWidget(
+                            current: _page,
+                            total: _totalPages,
+                            onJump: _loadPage),
+                      ),
+                    ],
                   ),
                 ],
+              ),
+              // Cüz seçim satırı
+              SizedBox(
+                height: 32,
+                child: ListView.builder(
+                  scrollDirection: Axis.horizontal,
+                  padding: const EdgeInsets.symmetric(horizontal: 4),
+                  itemCount: 30,
+                  itemBuilder: (ctx, i) {
+                    final juzNum = i + 1;
+                    final isActive = juzNum == _currentJuz;
+                    return GestureDetector(
+                      onTap: () => _jumpToJuz(juzNum),
+                      child: AnimatedContainer(
+                        duration: const Duration(milliseconds: 200),
+                        margin: const EdgeInsets.only(right: 4),
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 10, vertical: 4),
+                        decoration: BoxDecoration(
+                          color: isActive ? gold : gold.withOpacity(0.1),
+                          borderRadius: BorderRadius.circular(20),
+                          border: Border.all(
+                              color: isActive ? gold : gold.withOpacity(0.3)),
+                        ),
+                        child: Text(
+                          '${L.juz} $juzNum',
+                          style: TextStyle(
+                            fontSize: 11,
+                            fontWeight: FontWeight.w600,
+                            color: isActive ? const Color(0xFF0D1117) : gold,
+                          ),
+                        ),
+                      ),
+                    );
+                  },
+                ),
               ),
             ],
           ),
         ),
+
         Expanded(
           child: _loading
               ? _loadingCenter()
@@ -2045,9 +3108,7 @@ class _MushafTabState extends State<MushafTab> {
                                           fontSize: _fontSize,
                                           height: 2.2,
                                           color: isActive
-                                              ? Theme.of(context)
-                                                  .colorScheme
-                                                  .secondary
+                                              ? teal
                                               : (isDark
                                                   ? const Color(0xFFE8D5A3)
                                                   : const Color(0xFF2C1A00)),
@@ -2065,16 +3126,11 @@ class _MushafTabState extends State<MushafTab> {
                                             decoration: BoxDecoration(
                                               shape: BoxShape.circle,
                                               color: isActive
-                                                  ? Theme.of(context)
-                                                      .colorScheme
-                                                      .secondary
-                                                      .withOpacity(0.2)
+                                                  ? teal.withOpacity(0.2)
                                                   : gold.withOpacity(0.12),
                                               border: Border.all(
                                                   color: isActive
-                                                      ? Theme.of(context)
-                                                          .colorScheme
-                                                          .secondary
+                                                      ? teal
                                                       : gold.withOpacity(0.4)),
                                             ),
                                             child: Center(
@@ -2082,11 +3138,8 @@ class _MushafTabState extends State<MushafTab> {
                                                 '$ayahNum',
                                                 style: TextStyle(
                                                     fontSize: 9,
-                                                    color: isActive
-                                                        ? Theme.of(context)
-                                                            .colorScheme
-                                                            .secondary
-                                                        : gold,
+                                                    color:
+                                                        isActive ? teal : gold,
                                                     fontWeight:
                                                         FontWeight.w700),
                                               ),
@@ -2101,6 +3154,7 @@ class _MushafTabState extends State<MushafTab> {
                             ],
                           ),
                         ),
+                        // Font büyütme/küçültme butonları
                         Positioned(
                           bottom: 12,
                           right: 12,
@@ -2120,6 +3174,7 @@ class _MushafTabState extends State<MushafTab> {
                             ],
                           ),
                         ),
+                        // Mini player
                         if (_playingIdx >= 0)
                           Positioned(
                             bottom: 0,
@@ -2137,13 +3192,14 @@ class _MushafTabState extends State<MushafTab> {
                                   Icon(Icons.music_note, color: gold, size: 16),
                                   const SizedBox(width: 8),
                                   Expanded(
-                                      child: Text(
-                                    _verses[_playingIdx]['key'],
-                                    style: TextStyle(
-                                        color: gold,
-                                        fontSize: 13,
-                                        fontWeight: FontWeight.w600),
-                                  )),
+                                    child: Text(
+                                      _verses[_playingIdx]['key'],
+                                      style: TextStyle(
+                                          color: gold,
+                                          fontSize: 13,
+                                          fontWeight: FontWeight.w600),
+                                    ),
+                                  ),
                                   IconButton(
                                     icon: Icon(
                                         _isPlaying
@@ -2185,6 +3241,7 @@ class _PageJumpWidget extends StatefulWidget {
 
 class _PageJumpWidgetState extends State<_PageJumpWidget> {
   late TextEditingController _c;
+
   @override
   void initState() {
     super.initState();
@@ -2236,7 +3293,10 @@ class _AudioTabState extends State<AudioTab> {
   final _player = AudioPlayer();
   int? _playingSurah;
   bool _isPlaying = false;
+  bool _isLoading = false;
   String _currentReciter = 'afs';
+  Duration _position = Duration.zero;
+  Duration _duration = Duration.zero;
 
   static const Map<String, String> _reciters = {
     'afs': 'Mişari Raşid el-Afasî',
@@ -2250,6 +3310,17 @@ class _AudioTabState extends State<AudioTab> {
     _player.playerStateStream.listen((s) {
       if (mounted) setState(() => _isPlaying = s.playing);
     });
+    _player.positionStream.listen((p) {
+      if (mounted) setState(() => _position = p);
+    });
+    _player.durationStream.listen((d) {
+      if (mounted) setState(() => _duration = d ?? Duration.zero);
+    });
+    _player.processingStateStream.listen((ps) {
+      if (mounted)
+        setState(() => _isLoading =
+            ps == ProcessingState.buffering || ps == ProcessingState.loading);
+    });
   }
 
   Future<void> _play(int surahNumber) async {
@@ -2257,12 +3328,27 @@ class _AudioTabState extends State<AudioTab> {
       await _player.pause();
       return;
     }
-    setState(() => _playingSurah = surahNumber);
+    if (_playingSurah == surahNumber && !_isPlaying) {
+      await _player.play();
+      return;
+    }
+    setState(() {
+      _playingSurah = surahNumber;
+      _isLoading = true;
+    });
     try {
       final url = surahAudioUrl(surahNumber, folder: _currentReciter);
       await _player.setUrl(url);
       await _player.play();
-    } catch (_) {}
+    } catch (_) {
+      setState(() => _isLoading = false);
+    }
+  }
+
+  String _formatDur(Duration d) {
+    final m = d.inMinutes.toString().padLeft(2, '0');
+    final s = (d.inSeconds % 60).toString().padLeft(2, '0');
+    return '$m:$s';
   }
 
   @override
@@ -2274,10 +3360,12 @@ class _AudioTabState extends State<AudioTab> {
   @override
   Widget build(BuildContext context) {
     final gold = Theme.of(context).colorScheme.primary;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
     if (widget.surahs.isEmpty) return _loadingCenter();
 
     return Column(
       children: [
+        // Kari seçimi
         Padding(
           padding: const EdgeInsets.fromLTRB(12, 10, 12, 4),
           child: Row(
@@ -2304,9 +3392,101 @@ class _AudioTabState extends State<AudioTab> {
             ],
           ),
         ),
+
+        // Çalınan sure mini player
+        if (_playingSurah != null) ...[
+          Container(
+            margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: gold.withOpacity(0.1),
+              borderRadius: BorderRadius.circular(14),
+              border: Border.all(color: gold.withOpacity(0.3)),
+            ),
+            child: Column(
+              children: [
+                Row(
+                  children: [
+                    Container(
+                      width: 36,
+                      height: 36,
+                      decoration:
+                          BoxDecoration(shape: BoxShape.circle, color: gold),
+                      child: Center(
+                        child: _isLoading
+                            ? const SizedBox(
+                                width: 18,
+                                height: 18,
+                                child: CircularProgressIndicator(
+                                    color: Colors.white, strokeWidth: 2))
+                            : Icon(
+                                _isPlaying ? Icons.pause : Icons.play_arrow,
+                                color: const Color(0xFF0D1117),
+                                size: 20,
+                              ),
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            widget.surahs
+                                .firstWhere((s) => s.number == _playingSurah!,
+                                    orElse: () => widget.surahs.first)
+                                .englishName,
+                            style: const TextStyle(
+                                fontSize: 14, fontWeight: FontWeight.w700),
+                          ),
+                          Text(
+                            _reciters[_currentReciter] ?? '',
+                            style: TextStyle(
+                                fontSize: 11,
+                                color:
+                                    isDark ? Colors.white54 : Colors.black45),
+                          ),
+                        ],
+                      ),
+                    ),
+                    Text(
+                      '${_formatDur(_position)} / ${_formatDur(_duration)}',
+                      style: TextStyle(fontSize: 11, color: gold),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 6),
+                SliderTheme(
+                  data: SliderTheme.of(context).copyWith(
+                    trackHeight: 2,
+                    thumbShape:
+                        const RoundSliderThumbShape(enabledThumbRadius: 5),
+                    activeTrackColor: gold,
+                    thumbColor: gold,
+                    inactiveTrackColor: gold.withOpacity(0.2),
+                    overlayShape: SliderComponentShape.noOverlay,
+                  ),
+                  child: Slider(
+                    value: _duration.inSeconds > 0
+                        ? _position.inSeconds
+                            .toDouble()
+                            .clamp(0, _duration.inSeconds.toDouble())
+                        : 0,
+                    max: _duration.inSeconds
+                        .toDouble()
+                        .clamp(1, double.infinity),
+                    onChanged: (v) =>
+                        _player.seek(Duration(seconds: v.toInt())),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+
         Expanded(
           child: ListView.builder(
-            padding: const EdgeInsets.fromLTRB(12, 4, 12, 80),
+            padding: const EdgeInsets.fromLTRB(12, 4, 12, 20),
             itemCount: widget.surahs.length,
             itemBuilder: (ctx, i) {
               final s = widget.surahs[i];
@@ -2340,12 +3520,18 @@ class _AudioTabState extends State<AudioTab> {
                           fontSize: 14,
                           color: Theme.of(ctx).colorScheme.primary),
                       textDirection: TextDirection.rtl),
-                  trailing: Icon(
-                      playing && _isPlaying
-                          ? Icons.pause_circle
-                          : Icons.play_circle,
-                      color: gold,
-                      size: 32),
+                  trailing: playing && _isLoading
+                      ? SizedBox(
+                          width: 28,
+                          height: 28,
+                          child: CircularProgressIndicator(
+                              color: gold, strokeWidth: 2))
+                      : Icon(
+                          playing && _isPlaying
+                              ? Icons.pause_circle
+                              : Icons.play_circle,
+                          color: gold,
+                          size: 32),
                   onTap: () => _play(s.number),
                 ),
               );
@@ -2358,8 +3544,7 @@ class _AudioTabState extends State<AudioTab> {
 }
 
 // ─────────────────────────────────────────────
-//  NAMAZ VAKİTLERİ
-//  ✦ Sayfanın altında banner reklam
+//  NAMAZ VAKİTLERİ (Profesyonel)
 // ─────────────────────────────────────────────
 class PrayerTimesScreen extends StatefulWidget {
   const PrayerTimesScreen({super.key});
@@ -2368,7 +3553,8 @@ class PrayerTimesScreen extends StatefulWidget {
   State<PrayerTimesScreen> createState() => _PrayerTimesScreenState();
 }
 
-class _PrayerTimesScreenState extends State<PrayerTimesScreen> {
+class _PrayerTimesScreenState extends State<PrayerTimesScreen>
+    with TickerProviderStateMixin {
   Map<String, String>? _timings;
   Map<String, String>? _hijriDate;
   String _locationInfo = '';
@@ -2377,6 +3563,10 @@ class _PrayerTimesScreenState extends State<PrayerTimesScreen> {
   String _nextPrayer = '';
   Duration _remaining = Duration.zero;
   Timer? _timer;
+  late AnimationController _pulseCtrl;
+  late AnimationController _progressCtrl;
+  String _calculationMethod = '5'; // Diyanet = 5
+  String _methodName = 'Diyanet İşleri (Türkiye)';
 
   static const List<String> _prayerKeys = [
     'Imsak',
@@ -2386,7 +3576,6 @@ class _PrayerTimesScreenState extends State<PrayerTimesScreen> {
     'Asr',
     'Maghrib',
     'Isha',
-    'Midnight'
   ];
 
   static final Map<String, String> _prayerNamesTr = {
@@ -2411,6 +3600,15 @@ class _PrayerTimesScreenState extends State<PrayerTimesScreen> {
     'Midnight': 'Midnight',
   };
 
+  static const Map<String, String> _calcMethods = {
+    '5': 'Diyanet İşleri (Türkiye)',
+    '2': 'Islamic Society of North America (ISNA)',
+    '3': 'Muslim World League (MWL)',
+    '4': 'Umm Al-Qura University, Makkah',
+    '1': 'University of Islamic Sciences, Karachi',
+    '7': 'Institute of Geophysics, University of Tehran',
+  };
+
   String _prayerName(String key) {
     if (L.lang == AppLang.en) return _prayerNamesEn[key] ?? key;
     return _prayerNamesTr[key] ?? key;
@@ -2419,12 +3617,19 @@ class _PrayerTimesScreenState extends State<PrayerTimesScreen> {
   @override
   void initState() {
     super.initState();
+    _pulseCtrl =
+        AnimationController(vsync: this, duration: const Duration(seconds: 2))
+          ..repeat(reverse: true);
+    _progressCtrl =
+        AnimationController(vsync: this, duration: const Duration(seconds: 1));
     _fetch();
   }
 
   @override
   void dispose() {
     _timer?.cancel();
+    _pulseCtrl.dispose();
+    _progressCtrl.dispose();
     super.dispose();
   }
 
@@ -2436,7 +3641,6 @@ class _PrayerTimesScreenState extends State<PrayerTimesScreen> {
         _locationInfo = '';
       });
     }
-
     try {
       var perm = await Geolocator.checkPermission();
       if (perm == LocationPermission.denied) {
@@ -2448,8 +3652,7 @@ class _PrayerTimesScreenState extends State<PrayerTimesScreen> {
       }
 
       final pos = await Geolocator.getCurrentPosition(
-        desiredAccuracy: LocationAccuracy.medium,
-      );
+          desiredAccuracy: LocationAccuracy.medium);
 
       String city = '';
       String country = '';
@@ -2461,30 +3664,23 @@ class _PrayerTimesScreenState extends State<PrayerTimesScreen> {
           city = (p.locality ??
                   p.subAdministrativeArea ??
                   p.administrativeArea ??
-                  p.subLocality ??
                   '')
               .trim();
           country = (p.country ?? '').trim();
-          if (city.isEmpty && p.thoroughfare != null)
-            city = p.thoroughfare!.trim();
-          if (country.isEmpty) country = 'Unknown';
         }
-      } catch (e) {
-        debugPrint('Reverse geocoding error: $e');
-      }
+      } catch (_) {}
 
       _locationInfo = city.isNotEmpty
           ? (country.isNotEmpty ? '$city, $country' : city)
-          : 'Konum tespit ediliyor...';
+          : '${pos.latitude.toStringAsFixed(3)}°, ${pos.longitude.toStringAsFixed(3)}°';
 
       final now = DateTime.now();
       final ts = now.millisecondsSinceEpoch ~/ 1000;
-      final url = 'https://api.aladhan.com/v1/timings/$ts'
-          '?latitude=${pos.latitude}&longitude=${pos.longitude}&method=5';
+      final url =
+          'https://api.aladhan.com/v1/timings/$ts?latitude=${pos.latitude}&longitude=${pos.longitude}&method=$_calculationMethod';
 
       final r =
           await http.get(Uri.parse(url)).timeout(const Duration(seconds: 25));
-
       if (r.statusCode != 200) {
         throw Exception('API bağlantı hatası (${r.statusCode})');
       }
@@ -2499,17 +3695,16 @@ class _PrayerTimesScreenState extends State<PrayerTimesScreen> {
           _hijriDate = {
             'day': hijri['day'] as String,
             'month': (hijri['month'] as Map)['en'] as String,
+            'monthAr': (hijri['month'] as Map)['ar'] as String? ?? '',
             'year': hijri['year'] as String,
+            'weekday': (hijri['weekday'] as Map)['en'] as String? ?? '',
           };
           _loading = false;
         });
-
         _computeNextPrayer();
         _timer?.cancel();
         _timer = Timer.periodic(
-          const Duration(seconds: 10),
-          (_) => _computeNextPrayer(),
-        );
+            const Duration(seconds: 10), (_) => _computeNextPrayer());
       }
     } catch (e) {
       if (mounted) {
@@ -2534,12 +3729,10 @@ class _PrayerTimesScreenState extends State<PrayerTimesScreen> {
     for (final key in mainPrayers) {
       final timeStr = _timings![key];
       if (timeStr == null) continue;
-
       final parts = timeStr.split(':');
       final h = int.tryParse(parts[0]) ?? 0;
       final m = int.tryParse(parts[1].split(RegExp(r'[^0-9]'))[0]) ?? 0;
       final prayerMinutes = h * 60 + m;
-
       if (prayerMinutes > currentMinutes) {
         nextKey = key;
         nextMinutes = prayerMinutes;
@@ -2563,11 +3756,12 @@ class _PrayerTimesScreenState extends State<PrayerTimesScreen> {
     if (nextMinutes != null && nextKey != null) {
       int remainingMinutes = nextMinutes - currentMinutes;
       if (remainingMinutes < 0) remainingMinutes += 24 * 60;
-
-      setState(() {
-        _nextPrayer = nextKey!;
-        _remaining = Duration(minutes: remainingMinutes);
-      });
+      if (mounted) {
+        setState(() {
+          _nextPrayer = nextKey!;
+          _remaining = Duration(minutes: remainingMinutes);
+        });
+      }
     }
   }
 
@@ -2576,6 +3770,29 @@ class _PrayerTimesScreenState extends State<PrayerTimesScreen> {
     final hours = _remaining.inHours;
     final minutes = _remaining.inMinutes % 60;
     return hours > 0 ? '$hours s $minutes dk' : '$minutes dk';
+  }
+
+  // Güncel saate göre progress (iki namaz arası)
+  double _getPrayerProgress() {
+    if (_timings == null || _nextPrayer.isEmpty) return 0.0;
+    final mainPrayers = ['Fajr', 'Dhuhr', 'Asr', 'Maghrib', 'Isha'];
+    final nextIdx = mainPrayers.indexOf(_nextPrayer);
+    if (nextIdx <= 0) return 0.0;
+    final prevKey = mainPrayers[nextIdx - 1];
+
+    final now = DateTime.now();
+    final nowMin = now.hour * 60 + now.minute;
+
+    int _parseMin(String key) {
+      final parts = (_timings![key] ?? '00:00').split(':');
+      return (int.tryParse(parts[0]) ?? 0) * 60 +
+          (int.tryParse(parts[1].split(RegExp(r'[^0-9]'))[0]) ?? 0);
+    }
+
+    final prevMin = _parseMin(prevKey);
+    final nextMin = _parseMin(_nextPrayer);
+    if (nextMin <= prevMin) return 0.0;
+    return ((nowMin - prevMin) / (nextMin - prevMin)).clamp(0.0, 1.0);
   }
 
   @override
@@ -2588,11 +3805,37 @@ class _PrayerTimesScreenState extends State<PrayerTimesScreen> {
       appBar: AppBar(
         title: Text(L.prayerTimes),
         actions: [
+          // Hesap yöntemi seçimi
+          PopupMenuButton<String>(
+            icon: const Icon(Icons.tune, size: 22),
+            onSelected: (v) {
+              setState(() {
+                _calculationMethod = v;
+                _methodName = _calcMethods[v] ?? '';
+              });
+              _fetch();
+            },
+            itemBuilder: (_) => _calcMethods.entries
+                .map((e) => PopupMenuItem(
+                      value: e.key,
+                      child: Row(
+                        children: [
+                          if (_calculationMethod == e.key)
+                            Icon(Icons.check, color: gold, size: 16),
+                          if (_calculationMethod != e.key)
+                            const SizedBox(width: 16),
+                          const SizedBox(width: 8),
+                          Expanded(
+                              child: Text(e.value,
+                                  style: const TextStyle(fontSize: 13))),
+                        ],
+                      ),
+                    ))
+                .toList(),
+          ),
           IconButton(icon: const Icon(Icons.refresh), onPressed: _fetch),
         ],
       ),
-      // ✦ Banner reklam Namaz sayfasının altında — namaz vakitlerini görmek
-      //   için aşağı kaydırma gerektirmez, doğal bir yerde durur.
       bottomNavigationBar: const AdBannerWidget(size: AdSize.banner),
       body: _loading
           ? _loadingCenter()
@@ -2603,8 +3846,9 @@ class _PrayerTimesScreenState extends State<PrayerTimesScreen> {
                   child: ListView(
                     padding: const EdgeInsets.all(14),
                     children: [
+                      // Konum & tarih kartı
                       Container(
-                        padding: const EdgeInsets.all(16),
+                        padding: const EdgeInsets.all(18),
                         decoration: BoxDecoration(
                           gradient: LinearGradient(
                             colors: isDark
@@ -2617,111 +3861,281 @@ class _PrayerTimesScreenState extends State<PrayerTimesScreen> {
                                     const Color(0xFFEDE3D0)
                                   ],
                           ),
-                          borderRadius: BorderRadius.circular(16),
+                          borderRadius: BorderRadius.circular(20),
                           border: Border.all(color: gold.withOpacity(0.25)),
                         ),
                         child: Column(
                           children: [
-                            if (_locationInfo.isNotEmpty) ...[
-                              Row(
-                                mainAxisAlignment: MainAxisAlignment.center,
-                                children: [
-                                  Icon(Icons.location_on,
-                                      color: gold, size: 16),
-                                  const SizedBox(width: 4),
-                                  Text(
-                                    _locationInfo,
-                                    style: const TextStyle(
-                                      fontSize: 15,
-                                      fontWeight: FontWeight.w600,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                              const SizedBox(height: 6),
-                            ],
+                            // Konum
+                            Row(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                Icon(Icons.location_on, color: gold, size: 16),
+                                const SizedBox(width: 4),
+                                Text(
+                                  _locationInfo,
+                                  style: const TextStyle(
+                                      fontSize: 16,
+                                      fontWeight: FontWeight.w700),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 4),
+                            // Miladi tarih
+                            Text(
+                              _formatGregorianDate(),
+                              style: TextStyle(
+                                  fontSize: 12,
+                                  color:
+                                      isDark ? Colors.white54 : Colors.black45),
+                            ),
+                            const SizedBox(height: 2),
+                            // Hicri tarih
                             if (_hijriDate != null)
                               Text(
                                 '${_hijriDate!['day']} ${_hijriDate!['month']} ${_hijriDate!['year']} H',
                                 style: TextStyle(
-                                  fontSize: 13,
-                                  color: gold,
-                                  fontWeight: FontWeight.w600,
+                                    fontSize: 13,
+                                    color: gold,
+                                    fontWeight: FontWeight.w600),
+                              ),
+                            const SizedBox(height: 14),
+
+                            // Sıradaki namaz büyük gösterge
+                            if (_nextPrayer.isNotEmpty) ...[
+                              AnimatedBuilder(
+                                animation: _pulseCtrl,
+                                builder: (_, __) => Container(
+                                  padding: const EdgeInsets.all(16),
+                                  decoration: BoxDecoration(
+                                    color: (kPrayerColors[_nextPrayer] ?? teal)
+                                        .withOpacity(
+                                            0.1 + _pulseCtrl.value * 0.05),
+                                    borderRadius: BorderRadius.circular(16),
+                                    border: Border.all(
+                                        color:
+                                            (kPrayerColors[_nextPrayer] ?? teal)
+                                                .withOpacity(0.4)),
+                                  ),
+                                  child: Column(
+                                    children: [
+                                      Row(
+                                        mainAxisAlignment:
+                                            MainAxisAlignment.center,
+                                        children: [
+                                          Icon(
+                                            kPrayerIcons[_nextPrayer] ??
+                                                Icons.access_time,
+                                            color: kPrayerColors[_nextPrayer] ??
+                                                teal,
+                                            size: 22,
+                                          ),
+                                          const SizedBox(width: 8),
+                                          Text(
+                                            L.lang == AppLang.en
+                                                ? 'Next: ${_prayerName(_nextPrayer)}'
+                                                : 'Sıradaki: ${_prayerName(_nextPrayer)}',
+                                            style: TextStyle(
+                                              fontSize: 15,
+                                              fontWeight: FontWeight.w700,
+                                              color:
+                                                  kPrayerColors[_nextPrayer] ??
+                                                      teal,
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                      const SizedBox(height: 10),
+                                      Text(
+                                        _timings?[_nextPrayer]
+                                                ?.substring(0, 5) ??
+                                            '',
+                                        style: TextStyle(
+                                          fontSize: 42,
+                                          fontWeight: FontWeight.w800,
+                                          color: kPrayerColors[_nextPrayer] ??
+                                              teal,
+                                        ),
+                                      ),
+                                      const SizedBox(height: 6),
+                                      Text(
+                                        '${_formatRemaining()} ${L.lang == AppLang.en ? 'remaining' : 'kaldı'}',
+                                        style: TextStyle(
+                                          fontSize: 13,
+                                          color: kPrayerColors[_nextPrayer] ??
+                                              teal,
+                                        ),
+                                      ),
+                                      const SizedBox(height: 10),
+                                      // İlerleme çubuğu
+                                      ClipRRect(
+                                        borderRadius: BorderRadius.circular(4),
+                                        child: LinearProgressIndicator(
+                                          value: _getPrayerProgress(),
+                                          minHeight: 6,
+                                          backgroundColor:
+                                              (kPrayerColors[_nextPrayer] ??
+                                                      teal)
+                                                  .withOpacity(0.2),
+                                          valueColor: AlwaysStoppedAnimation(
+                                              kPrayerColors[_nextPrayer] ??
+                                                  teal),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
                                 ),
                               ),
-                            const SizedBox(height: 16),
-                            if (_nextPrayer.isNotEmpty)
-                              Container(
-                                padding: const EdgeInsets.symmetric(
-                                    horizontal: 16, vertical: 12),
-                                decoration: BoxDecoration(
-                                  color: teal.withOpacity(0.12),
-                                  borderRadius: BorderRadius.circular(12),
-                                  border:
-                                      Border.all(color: teal.withOpacity(0.3)),
-                                ),
-                                child: Row(
-                                  mainAxisAlignment:
-                                      MainAxisAlignment.spaceBetween,
-                                  children: [
-                                    Text(
-                                      '${L.nextPrayer}: ${_prayerName(_nextPrayer)}',
-                                      style: TextStyle(
-                                        color: teal,
-                                        fontWeight: FontWeight.w700,
-                                        fontSize: 15,
-                                      ),
-                                    ),
-                                    Text(
-                                      _formatRemaining(),
-                                      style: TextStyle(
-                                        color: teal,
-                                        fontWeight: FontWeight.w700,
-                                        fontSize: 15,
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ),
+                            ],
                           ],
                         ),
                       ),
                       const SizedBox(height: 14),
-                      GridView.count(
-                        crossAxisCount: 2,
-                        shrinkWrap: true,
-                        physics: const NeverScrollableScrollPhysics(),
-                        crossAxisSpacing: 10,
-                        mainAxisSpacing: 10,
-                        childAspectRatio: 1.75,
-                        children: _prayerKeys
-                            .where((k) => _timings?.containsKey(k) == true)
-                            .map((k) => _PrayerCard(
-                                  name: _prayerName(k),
-                                  time: _timings![k]!.length > 5
-                                      ? _timings![k]!.substring(0, 5)
-                                      : _timings![k]!,
-                                  isNext: k == _nextPrayer,
-                                ))
-                            .toList(),
+
+                      // Hesap yöntemi bilgisi
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 14, vertical: 8),
+                        decoration: BoxDecoration(
+                          color:
+                              isDark ? const Color(0xFF161B22) : Colors.white,
+                          borderRadius: BorderRadius.circular(10),
+                          border: Border.all(
+                              color: isDark
+                                  ? Colors.white.withOpacity(0.07)
+                                  : Colors.black.withOpacity(0.07)),
+                        ),
+                        child: Row(
+                          children: [
+                            Icon(Icons.calculate_outlined,
+                                color: gold, size: 16),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: Text(
+                                _calcMethods[_calculationMethod] ?? '',
+                                style: TextStyle(
+                                    fontSize: 11,
+                                    color: isDark
+                                        ? Colors.white54
+                                        : Colors.black45),
+                              ),
+                            ),
+                            Text(
+                              L.lang == AppLang.en ? 'Change' : 'Değiştir',
+                              style: TextStyle(
+                                  fontSize: 11,
+                                  color: gold,
+                                  fontWeight: FontWeight.w600),
+                            ),
+                          ],
+                        ),
                       ),
+                      const SizedBox(height: 14),
+
+                      // Vakitler listesi (kart formatında)
+                      ...(_prayerKeys
+                          .where((k) => _timings?.containsKey(k) == true)
+                          .map((k) => _PrayerTimeCard(
+                                prayerKey: k,
+                                name: _prayerName(k),
+                                time: _timings![k]!.length > 5
+                                    ? _timings![k]!.substring(0, 5)
+                                    : _timings![k]!,
+                                isNext: k == _nextPrayer,
+                                icon: kPrayerIcons[k] ?? Icons.access_time,
+                                color: kPrayerColors[k] ?? Colors.grey,
+                              ))
+                          .toList()),
+
+                      // Gece yarısı vakti
+                      if (_timings?.containsKey('Midnight') == true)
+                        Padding(
+                          padding: const EdgeInsets.only(top: 8),
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 16, vertical: 10),
+                            decoration: BoxDecoration(
+                              color: isDark
+                                  ? const Color(0xFF161B22)
+                                  : Colors.white,
+                              borderRadius: BorderRadius.circular(12),
+                              border: Border.all(
+                                  color: isDark
+                                      ? Colors.white.withOpacity(0.07)
+                                      : Colors.black.withOpacity(0.07)),
+                            ),
+                            child: Row(
+                              children: [
+                                Icon(Icons.nightlight_round,
+                                    size: 20, color: const Color(0xFF6C5CE7)),
+                                const SizedBox(width: 12),
+                                Text(
+                                  _prayerNamesTr['Midnight'] ?? 'Gece Yarısı',
+                                  style: const TextStyle(fontSize: 13),
+                                ),
+                                const Spacer(),
+                                Text(
+                                  _timings!['Midnight']!.length > 5
+                                      ? _timings!['Midnight']!.substring(0, 5)
+                                      : _timings!['Midnight']!,
+                                  style: const TextStyle(
+                                      fontSize: 16,
+                                      fontWeight: FontWeight.w700),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
                     ],
                   ),
                 ),
     );
   }
+
+  String _formatGregorianDate() {
+    final now = DateTime.now();
+    const months = [
+      'Ocak',
+      'Şubat',
+      'Mart',
+      'Nisan',
+      'Mayıs',
+      'Haziran',
+      'Temmuz',
+      'Ağustos',
+      'Eylül',
+      'Ekim',
+      'Kasım',
+      'Aralık'
+    ];
+    const days = [
+      'Pazartesi',
+      'Salı',
+      'Çarşamba',
+      'Perşembe',
+      'Cuma',
+      'Cumartesi',
+      'Pazar'
+    ];
+    return '${days[now.weekday - 1]}, ${now.day} ${months[now.month - 1]} ${now.year}';
+  }
 }
 
-class _PrayerCard extends StatelessWidget {
+class _PrayerTimeCard extends StatelessWidget {
+  final String prayerKey;
   final String name;
   final String time;
   final bool isNext;
+  final IconData icon;
+  final Color color;
 
-  const _PrayerCard({
-    super.key,
+  const _PrayerTimeCard({
+    required this.prayerKey,
     required this.name,
     required this.time,
     required this.isNext,
+    required this.icon,
+    required this.color,
   });
 
   @override
@@ -2729,50 +4143,64 @@ class _PrayerCard extends StatelessWidget {
     final gold = Theme.of(context).colorScheme.primary;
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+    return AnimatedContainer(
+      duration: const Duration(milliseconds: 300),
+      margin: const EdgeInsets.only(bottom: 8),
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
       decoration: BoxDecoration(
         color: isNext
-            ? gold.withOpacity(0.1)
+            ? color.withOpacity(0.1)
             : (isDark ? const Color(0xFF161B22) : Colors.white),
         borderRadius: BorderRadius.circular(14),
         border: Border.all(
           color: isNext
-              ? gold.withOpacity(0.5)
+              ? color.withOpacity(0.5)
               : (isDark
                   ? Colors.white.withOpacity(0.07)
                   : Colors.black.withOpacity(0.07)),
-          width: isNext ? 1.8 : 0.6,
+          width: isNext ? 1.5 : 0.6,
         ),
       ),
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
+      child: Row(
         children: [
-          Text(
-            name,
-            style: TextStyle(
-              fontSize: 13,
-              color: isNext ? gold : null,
-              fontWeight: isNext ? FontWeight.w700 : FontWeight.w500,
+          Container(
+            width: 40,
+            height: 40,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              color: color.withOpacity(isNext ? 0.2 : 0.1),
+            ),
+            child: Icon(icon, color: color, size: 20),
+          ),
+          const SizedBox(width: 14),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  name,
+                  style: TextStyle(
+                    fontSize: 14,
+                    fontWeight: isNext ? FontWeight.w700 : FontWeight.w500,
+                    color: isNext ? color : null,
+                  ),
+                ),
+                if (isNext)
+                  Text(
+                    L.lang == AppLang.en ? '← Next prayer' : '← Sıradaki namaz',
+                    style: TextStyle(fontSize: 10, color: color),
+                  ),
+              ],
             ),
           ),
-          const SizedBox(height: 8),
           Text(
             time,
             style: TextStyle(
-              fontSize: 23,
+              fontSize: 24,
               fontWeight: FontWeight.w700,
-              color: isNext ? gold : null,
+              color: isNext ? color : null,
             ),
           ),
-          if (isNext)
-            const Padding(
-              padding: EdgeInsets.only(top: 4),
-              child: Text(
-                '← Sıradaki',
-                style: TextStyle(fontSize: 9.5, color: Colors.orangeAccent),
-              ),
-            ),
         ],
       ),
     );
@@ -2780,10 +4208,7 @@ class _PrayerCard extends StatelessWidget {
 }
 
 // ─────────────────────────────────────────────
-//  KIBLE EKRANI
-//  ✦ Sayfanın altında banner reklam —
-//    pusula dönerken ekrana dokunulmaz,
-//    banner altta güvenli bir alanda.
+//  KIBLE BULUCU (Profesyonel)
 // ─────────────────────────────────────────────
 class QiblaScreen extends StatefulWidget {
   const QiblaScreen({super.key});
@@ -2793,7 +4218,7 @@ class QiblaScreen extends StatefulWidget {
 }
 
 class _QiblaScreenState extends State<QiblaScreen>
-    with SingleTickerProviderStateMixin {
+    with TickerProviderStateMixin {
   double _qiblaAngle = 0;
   double _compassHeading = 0;
   bool _hasLocation = false;
@@ -2803,12 +4228,22 @@ class _QiblaScreenState extends State<QiblaScreen>
   double _distanceKm = 0;
   StreamSubscription<CompassEvent>? _compassSub;
   late AnimationController _pulseCtrl;
+  late AnimationController _rotateCtrl;
+  late AnimationController _alignCtrl;
+  double _targetAngle = 0;
+  double _displayAngle = 0;
+  List<double> _headingHistory = [];
 
   @override
   void initState() {
     super.initState();
     _pulseCtrl =
         AnimationController(vsync: this, duration: const Duration(seconds: 2))
+          ..repeat(reverse: true);
+    _rotateCtrl = AnimationController(
+        vsync: this, duration: const Duration(milliseconds: 300));
+    _alignCtrl =
+        AnimationController(vsync: this, duration: const Duration(seconds: 1))
           ..repeat(reverse: true);
     _initQibla();
   }
@@ -2852,10 +4287,18 @@ class _QiblaScreenState extends State<QiblaScreen>
 
       _compassSub = FlutterCompass.events?.listen((event) {
         if (event.heading == null) return;
+
+        // Smooth filtering
+        _headingHistory.add(event.heading!);
+        if (_headingHistory.length > 5) _headingHistory.removeAt(0);
+        double smoothed =
+            _headingHistory.reduce((a, b) => a + b) / _headingHistory.length;
+
         if (mounted) {
-          final diff = (_qiblaAngle - event.heading!).abs() % 360;
+          final diff = (_qiblaAngle - smoothed).abs() % 360;
           setState(() {
-            _compassHeading = event.heading!;
+            _compassHeading = smoothed;
+            _displayAngle = (_qiblaAngle - smoothed) * math.pi / 180;
             _aligned = diff < 5 || diff > 355;
           });
         }
@@ -2869,11 +4312,9 @@ class _QiblaScreenState extends State<QiblaScreen>
     final lat1 = lat * math.pi / 180;
     final lat2 = kKaabaLat * math.pi / 180;
     final dLon = (kKaabaLon - lon) * math.pi / 180;
-
     final y = math.sin(dLon) * math.cos(lat2);
     final x = math.cos(lat1) * math.sin(lat2) -
         math.sin(lat1) * math.cos(lat2) * math.cos(dLon);
-
     double bearing = math.atan2(y, x) * 180 / math.pi;
     return (bearing + 360) % 360;
   }
@@ -2882,6 +4323,8 @@ class _QiblaScreenState extends State<QiblaScreen>
   void dispose() {
     _compassSub?.cancel();
     _pulseCtrl.dispose();
+    _rotateCtrl.dispose();
+    _alignCtrl.dispose();
     super.dispose();
   }
 
@@ -2890,6 +4333,7 @@ class _QiblaScreenState extends State<QiblaScreen>
     final gold = Theme.of(context).colorScheme.primary;
     final teal = Theme.of(context).colorScheme.secondary;
     final isDark = Theme.of(context).brightness == Brightness.dark;
+    final activeColor = _aligned ? teal : gold;
 
     if (_error.isNotEmpty) {
       return Scaffold(
@@ -2900,18 +4344,20 @@ class _QiblaScreenState extends State<QiblaScreen>
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                const Icon(Icons.location_off, size: 48, color: Colors.red),
+                const Icon(Icons.location_off, size: 56, color: Colors.red),
                 const SizedBox(height: 16),
                 Text(_error,
                     textAlign: TextAlign.center,
                     style: const TextStyle(color: Colors.red, fontSize: 14)),
-                const SizedBox(height: 16),
-                ElevatedButton(
-                    onPressed: () {
-                      setState(() => _error = '');
-                      _initQibla();
-                    },
-                    child: const Text('Tekrar Dene / Retry')),
+                const SizedBox(height: 20),
+                ElevatedButton.icon(
+                  onPressed: () {
+                    setState(() => _error = '');
+                    _initQibla();
+                  },
+                  icon: const Icon(Icons.refresh),
+                  label: const Text('Tekrar Dene'),
+                ),
               ],
             ),
           ),
@@ -2921,14 +4367,31 @@ class _QiblaScreenState extends State<QiblaScreen>
 
     if (!_hasLocation) {
       return Scaffold(
-          appBar: AppBar(title: Text(L.qiblaFinder)), body: _loadingCenter());
+        appBar: AppBar(title: Text(L.qiblaFinder)),
+        body: Center(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const CircularProgressIndicator(),
+              const SizedBox(height: 16),
+              Text(L.loading),
+              const SizedBox(height: 8),
+              Text(
+                L.lang == AppLang.en
+                    ? 'Getting your location...'
+                    : 'Konumunuz alınıyor...',
+                style: TextStyle(
+                    fontSize: 12,
+                    color: isDark ? Colors.white54 : Colors.black45),
+              ),
+            ],
+          ),
+        ),
+      );
     }
-
-    final arrowAngle = (_qiblaAngle - _compassHeading) * math.pi / 180;
 
     return Scaffold(
       appBar: AppBar(title: Text(L.qiblaFinder)),
-      // ✦ Banner reklam altta — pusula kullanımını hiç bozmaz
       bottomNavigationBar: const AdBannerWidget(size: AdSize.banner),
       body: SafeArea(
         child: SingleChildScrollView(
@@ -2936,101 +4399,186 @@ class _QiblaScreenState extends State<QiblaScreen>
             padding: const EdgeInsets.all(20),
             child: Column(
               children: [
-                Text(L.calibrate,
+                // Kalibrasyon metni
+                Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                  decoration: BoxDecoration(
+                    color: isDark
+                        ? Colors.white.withOpacity(0.05)
+                        : Colors.black.withOpacity(0.04),
+                    borderRadius: BorderRadius.circular(20),
+                  ),
+                  child: Text(
+                    L.calibrate,
                     textAlign: TextAlign.center,
                     style: TextStyle(
                         fontSize: 12,
-                        color: isDark ? Colors.white54 : Colors.black45)),
-                const SizedBox(height: 20),
+                        color: isDark ? Colors.white54 : Colors.black45),
+                  ),
+                ),
+                const SizedBox(height: 24),
+
+                // Hizalandı bildirimi
+                AnimatedOpacity(
+                  opacity: _aligned ? 1.0 : 0.0,
+                  duration: const Duration(milliseconds: 500),
+                  child: AnimatedBuilder(
+                    animation: _alignCtrl,
+                    builder: (_, __) => Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 20, vertical: 10),
+                      decoration: BoxDecoration(
+                        color: teal.withOpacity(0.15 + _alignCtrl.value * 0.05),
+                        borderRadius: BorderRadius.circular(30),
+                        border: Border.all(color: teal.withOpacity(0.5)),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(Icons.check_circle, color: teal, size: 18),
+                          const SizedBox(width: 8),
+                          Text(
+                            L.lang == AppLang.en
+                                ? '✓ Qibla Direction Found!'
+                                : '✓ Kıble Yönü Bulundu!',
+                            style: TextStyle(
+                                color: teal, fontWeight: FontWeight.w700),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 16),
+
+                // Pusula dairesi
                 SizedBox(
-                  width: 280,
-                  height: 280,
+                  width: 300,
+                  height: 300,
                   child: Stack(
                     alignment: Alignment.center,
                     children: [
+                      // Dış halka (nabız animasyonu)
                       AnimatedBuilder(
                         animation: _pulseCtrl,
                         builder: (_, __) => Container(
-                          width: 280,
-                          height: 280,
+                          width: 300,
+                          height: 300,
                           decoration: BoxDecoration(
                             shape: BoxShape.circle,
                             border: Border.all(
-                                color: (_aligned ? teal : gold)
-                                    .withOpacity(0.3 + _pulseCtrl.value * 0.3),
-                                width: 2),
+                              color: activeColor
+                                  .withOpacity(0.2 + _pulseCtrl.value * 0.2),
+                              width: 2,
+                            ),
                           ),
                         ),
                       ),
-                      ...[
-                        _CompassLabel('N', const Offset(0, -120)),
-                        _CompassLabel('S', const Offset(0, 120)),
-                        _CompassLabel('E', const Offset(120, 0)),
-                        _CompassLabel('W', const Offset(-120, 0)),
-                      ],
+                      // İç halka
                       Container(
-                        width: 42,
-                        height: 42,
+                        width: 260,
+                        height: 260,
                         decoration: BoxDecoration(
                           shape: BoxShape.circle,
-                          color: gold.withOpacity(0.12),
-                          border: Border.all(color: gold.withOpacity(0.4)),
-                        ),
-                        child: Center(
-                          child:
-                              Text('🕋', style: const TextStyle(fontSize: 20)),
+                          border: Border.all(
+                              color: activeColor.withOpacity(0.3), width: 1),
                         ),
                       ),
+                      // Derece işaretleri
+                      ...List.generate(36, (i) {
+                        final angle = i * 10.0 * math.pi / 180;
+                        final isMain = i % 9 == 0;
+                        return Transform.rotate(
+                          angle: angle,
+                          child: Align(
+                            alignment: Alignment.topCenter,
+                            child: Container(
+                              width: isMain ? 2 : 1,
+                              height: isMain ? 16 : 8,
+                              color:
+                                  activeColor.withOpacity(isMain ? 0.6 : 0.3),
+                              margin: const EdgeInsets.only(top: 4),
+                            ),
+                          ),
+                        );
+                      }),
+                      // Yön etiketleri
+                      _CompassLabel('N', const Offset(0, -120), teal),
+                      _CompassLabel('S', const Offset(0, 120), activeColor),
+                      _CompassLabel('E', const Offset(120, 0), activeColor),
+                      _CompassLabel('W', const Offset(-120, 0), activeColor),
+                      // Kabe ikonu (merkez)
+                      Container(
+                        width: 48,
+                        height: 48,
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          color: gold.withOpacity(0.15),
+                          border: Border.all(color: gold.withOpacity(0.4)),
+                        ),
+                        child: const Center(
+                          child: Text('🕋', style: TextStyle(fontSize: 22)),
+                        ),
+                      ),
+                      // Kıble oku
                       Transform.rotate(
-                        angle: arrowAngle,
+                        angle: _displayAngle,
                         child: Column(
                           mainAxisSize: MainAxisSize.min,
                           children: [
-                            Icon(Icons.navigation,
-                                size: 80, color: _aligned ? teal : gold),
-                            const SizedBox(height: 50),
+                            Container(
+                              width: 40,
+                              height: 40,
+                              decoration: BoxDecoration(
+                                shape: BoxShape.circle,
+                                color: activeColor.withOpacity(0.15),
+                              ),
+                              child: Icon(Icons.navigation,
+                                  size: 36, color: activeColor),
+                            ),
+                            const SizedBox(height: 55),
                           ],
                         ),
                       ),
                     ],
                   ),
                 ),
-                const SizedBox(height: 24),
+                const SizedBox(height: 20),
+
+                // Bilgi paneli
                 Container(
-                  padding: const EdgeInsets.all(16),
+                  padding: const EdgeInsets.all(18),
                   decoration: BoxDecoration(
                     color: isDark ? const Color(0xFF161B22) : Colors.white,
-                    borderRadius: BorderRadius.circular(16),
-                    border: Border.all(
-                        color: (_aligned ? teal : gold).withOpacity(0.3)),
+                    borderRadius: BorderRadius.circular(18),
+                    border: Border.all(color: activeColor.withOpacity(0.3)),
                   ),
                   child: Column(
                     children: [
-                      if (_aligned)
-                        Container(
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: 14, vertical: 6),
-                          decoration: BoxDecoration(
-                            color: teal.withOpacity(0.15),
-                            borderRadius: BorderRadius.circular(20),
-                          ),
-                          child: Text('✓ Kıble Yönü Bulundu!',
-                              style: TextStyle(
-                                  color: teal, fontWeight: FontWeight.w700)),
-                        ),
-                      const SizedBox(height: 8),
                       _InfoRow(L.qiblaDir, '${_qiblaAngle.toStringAsFixed(1)}°',
                           gold),
+                      const SizedBox(height: 8),
                       _InfoRow(L.deviceHeading,
                           '${_compassHeading.toStringAsFixed(1)}°', null),
-                      _InfoRow('Kabe Mesafesi',
-                          '${_distanceKm.toStringAsFixed(0)} km', teal),
-                      if (_locationName.isNotEmpty)
-                        _InfoRow('Konum', _locationName, null),
+                      const SizedBox(height: 8),
+                      _InfoRow(
+                          L.lang == AppLang.en
+                              ? 'Distance to Kaaba'
+                              : 'Kabe Mesafesi',
+                          '${_distanceKm.toStringAsFixed(0)} km',
+                          teal),
+                      if (_locationName.isNotEmpty) ...[
+                        const SizedBox(height: 8),
+                        _InfoRow(L.lang == AppLang.en ? 'Location' : 'Konum',
+                            _locationName, null),
+                      ],
                     ],
                   ),
                 ),
                 const SizedBox(height: 14),
+
+                // Kabe koordinatları
                 Container(
                   padding: const EdgeInsets.all(12),
                   decoration: BoxDecoration(
@@ -3041,23 +4589,40 @@ class _QiblaScreenState extends State<QiblaScreen>
                             ? Colors.white.withOpacity(0.07)
                             : Colors.black.withOpacity(0.07)),
                   ),
-                  child: Column(
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
                     children: [
-                      Text('🕋 Kabe Koordinatları',
-                          style: TextStyle(
-                              fontSize: 12,
-                              color: gold,
-                              fontWeight: FontWeight.w700)),
-                      const SizedBox(height: 4),
-                      Text('21.4225°K,  39.8262°D',
-                          style: TextStyle(
-                              fontSize: 12,
-                              color: isDark ? Colors.white54 : Colors.black45)),
-                      const SizedBox(height: 2),
-                      Text('Hesaplama: Haversine Formülü',
-                          style: TextStyle(
-                              fontSize: 11,
-                              color: isDark ? Colors.white38 : Colors.black38)),
+                      Text('🕋 ', style: TextStyle(fontSize: 14)),
+                      Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            L.lang == AppLang.en
+                                ? 'Kaaba Coordinates'
+                                : 'Kabe Koordinatları',
+                            style: TextStyle(
+                                fontSize: 12,
+                                color: gold,
+                                fontWeight: FontWeight.w700),
+                          ),
+                          Text(
+                            '21.4225°K,  39.8262°D',
+                            style: TextStyle(
+                                fontSize: 12,
+                                color:
+                                    isDark ? Colors.white54 : Colors.black45),
+                          ),
+                          Text(
+                            L.lang == AppLang.en
+                                ? 'Algorithm: Haversine Formula'
+                                : 'Algoritma: Haversine Formülü',
+                            style: TextStyle(
+                                fontSize: 11,
+                                color:
+                                    isDark ? Colors.white38 : Colors.black38),
+                          ),
+                        ],
+                      ),
                     ],
                   ),
                 ),
@@ -3073,7 +4638,8 @@ class _QiblaScreenState extends State<QiblaScreen>
 class _CompassLabel extends StatelessWidget {
   final String label;
   final Offset offset;
-  const _CompassLabel(this.label, this.offset);
+  final Color color;
+  const _CompassLabel(this.label, this.offset, this.color);
 
   @override
   Widget build(BuildContext context) {
@@ -3083,10 +4649,8 @@ class _CompassLabel extends StatelessWidget {
         label,
         style: TextStyle(
           fontSize: 14,
-          fontWeight: FontWeight.w700,
-          color: label == 'N'
-              ? Theme.of(context).colorScheme.secondary
-              : Theme.of(context).colorScheme.primary.withOpacity(0.6),
+          fontWeight: FontWeight.w800,
+          color: color,
         ),
       ),
     );
@@ -3102,30 +4666,24 @@ class _InfoRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 4),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        children: [
-          Text(label,
-              style: TextStyle(
-                  fontSize: 13,
-                  color: isDark ? Colors.white54 : Colors.black45)),
-          Text(value,
-              style: TextStyle(
-                  fontSize: 14,
-                  fontWeight: FontWeight.w700,
-                  color: valueColor)),
-        ],
-      ),
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      children: [
+        Text(label,
+            style: TextStyle(
+                fontSize: 13, color: isDark ? Colors.white54 : Colors.black45)),
+        Text(value,
+            style: TextStyle(
+                fontSize: 14,
+                fontWeight: FontWeight.w700,
+                color: valueColor ?? (isDark ? Colors.white : Colors.black87))),
+      ],
     );
   }
 }
 
 // ─────────────────────────────────────────────
 //  GÜNLÜK EKRAN
-//  ✦ Native reklam içerik kartları arasında —
-//    içerikle uyumlu, doğal görünüm.
 // ─────────────────────────────────────────────
 class DailyScreen extends StatefulWidget {
   const DailyScreen({super.key});
@@ -3145,7 +4703,6 @@ class _DailyScreenState extends State<DailyScreen> {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final v = kDailyVerses[_dayIdx];
     final h = kHadiths[_hadithIdx];
-
     final textColor = isDark ? Colors.white70 : Colors.black87;
     final subColor = isDark ? Colors.white38 : Colors.black38;
 
@@ -3154,7 +4711,6 @@ class _DailyScreenState extends State<DailyScreen> {
       body: ListView(
         padding: const EdgeInsets.all(14),
         children: [
-          // Günün Ayeti
           _DailyCard(
             tag: '📖 ${L.dailyVerse}',
             tagColor: gold,
@@ -3188,12 +4744,7 @@ class _DailyScreenState extends State<DailyScreen> {
             ),
           ),
           const SizedBox(height: 12),
-
-          // ✦ Native reklam — Ayet kartı ile Hadis kartı arasında.
-          //   İçerikle uyumlu, göze batmayan bir konum.
           const NativeAdCard(),
-
-          // Günün Hadisi
           _DailyCard(
             tag: '📜 ${L.dailyHadith}',
             tagColor: teal,
@@ -3215,8 +4766,6 @@ class _DailyScreenState extends State<DailyScreen> {
             ),
           ),
           const SizedBox(height: 12),
-
-          // Tavsiye Zikir
           _DailyCard(
             tag: '📿 ${L.dailyDhikr}',
             tagColor: const Color(0xFF9B59B6),
@@ -3251,8 +4800,6 @@ class _DailyScreenState extends State<DailyScreen> {
             ),
           ),
           const SizedBox(height: 12),
-
-          // Esmaül Hüsna
           _DailyCard(
             tag: '✨ ${L.lang == AppLang.en ? 'Name of the Day' : 'Günün İsmi'}',
             tagColor: const Color(0xFFE67E22),
@@ -3354,6 +4901,7 @@ class _DuaScreenState extends State<DuaScreen> {
   @override
   Widget build(BuildContext context) {
     final gold = Theme.of(context).colorScheme.primary;
+    final teal = Theme.of(context).colorScheme.secondary;
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
     return Scaffold(
@@ -3403,9 +4951,9 @@ class _DuaScreenState extends State<DuaScreen> {
                             shape: BoxShape.circle,
                             color: gold.withOpacity(0.12),
                           ),
-                          child: Center(
-                              child: Text('🤲',
-                                  style: const TextStyle(fontSize: 14))),
+                          child: const Center(
+                              child:
+                                  Text('🤲', style: TextStyle(fontSize: 14))),
                         ),
                         const SizedBox(width: 10),
                         Expanded(
@@ -3463,18 +5011,14 @@ class _DuaScreenState extends State<DuaScreen> {
                               padding: const EdgeInsets.symmetric(
                                   horizontal: 8, vertical: 3),
                               decoration: BoxDecoration(
-                                color: Theme.of(context)
-                                    .colorScheme
-                                    .secondary
-                                    .withOpacity(0.12),
+                                color: teal.withOpacity(0.12),
                                 borderRadius: BorderRadius.circular(8),
                               ),
                               child: Text(
                                 d['src']!,
                                 style: TextStyle(
                                   fontSize: 10,
-                                  color:
-                                      Theme.of(context).colorScheme.secondary,
+                                  color: teal,
                                   fontWeight: FontWeight.w700,
                                 ),
                               ),
@@ -3516,9 +5060,6 @@ class _DuaScreenState extends State<DuaScreen> {
 
 // ─────────────────────────────────────────────
 //  ZİKİR EKRANI
-//  ✦ Hedefe ulaşınca ödüllü reklam teklif edilir —
-//    isteğe bağlı, zorlamaz; "Ödül kazan" butonu
-//    ile kullanıcı kendi seçer.
 // ─────────────────────────────────────────────
 class ZikirScreen extends StatefulWidget {
   const ZikirScreen({super.key});
@@ -3541,9 +5082,7 @@ class _ZikirScreenState extends State<ZikirScreen>
   void initState() {
     super.initState();
     _bounce = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 100),
-    );
+        vsync: this, duration: const Duration(milliseconds: 100));
     _scale = Tween(begin: 1.0, end: 0.92)
         .animate(CurvedAnimation(parent: _bounce, curve: Curves.easeInOut));
     _load();
@@ -3586,27 +5125,22 @@ class _ZikirScreenState extends State<ZikirScreen>
       if (hasVib) Vibration.vibrate(duration: 30, amplitude: 60);
     } catch (_) {}
     await _save();
-
     if (_target > 0 && _count == _target && !_targetReachedThisSession) {
       _targetReachedThisSession = true;
       if (mounted) _showTargetReachedDialog();
     }
   }
 
-  /// Hedefe ulaşıldığında gösterilen diyalog.
-  /// Kullanıcı isterse ödüllü reklam izleyebilir,
-  /// istemezse "Hayır" ile geçer — hiçbir zorlama yok.
   void _showTargetReachedDialog() {
     final gold = Theme.of(context).colorScheme.primary;
     final teal = Theme.of(context).colorScheme.secondary;
-
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
         title: Row(
           children: [
-            Text('🎉 ', style: const TextStyle(fontSize: 24)),
+            const Text('🎉 ', style: TextStyle(fontSize: 24)),
             Text(
               L.lang == AppLang.en ? 'Target Reached!' : 'Hedefe Ulaştınız!',
               style: TextStyle(
@@ -3852,7 +5386,7 @@ class _ZikirScreenState extends State<ZikirScreen>
                               .toList(),
                           onChanged: (v) => setState(() => _target = v ?? 33),
                         ),
-                        const SizedBox(width: 12),
+                        const SizedBox(width: 8),
                         OutlinedButton.icon(
                           onPressed: _reset,
                           icon: const Icon(Icons.refresh, size: 16),
@@ -3949,8 +5483,6 @@ class _ZikirHistory extends StatelessWidget {
 
 // ─────────────────────────────────────────────
 //  AYARLAR
-//  ✦ Banner reklam altta — kullanıcı ayar
-//    yaparken içeriği tam görebilir.
 // ─────────────────────────────────────────────
 class SettingsScreen extends StatelessWidget {
   const SettingsScreen({super.key});
@@ -3963,7 +5495,6 @@ class SettingsScreen extends StatelessWidget {
 
     return Scaffold(
       appBar: AppBar(title: Text(L.settings)),
-      // ✦ Banner Ayarlar sayfasında da altta — zararsız, doğal
       bottomNavigationBar: const AdBannerWidget(size: AdSize.banner),
       body: ListView(
         padding: const EdgeInsets.all(14),
@@ -4006,8 +5537,7 @@ class SettingsScreen extends StatelessWidget {
             title: L.reciter,
             child: Column(
               children: kReciters.entries.map((e) {
-                final active =
-                    (app != null && QuranApp.of(context)?.reciter == e.key);
+                final active = QuranApp.of(context)?.reciter == e.key;
                 return ListTile(
                   dense: true,
                   title: Text(e.value['name']!),
@@ -4037,12 +5567,22 @@ class SettingsScreen extends StatelessWidget {
           ),
           const SizedBox(height: 20),
           Center(
-            child: Text(
-              'Kur\'an-ı Kerim  v2.0\nAPI: alquran.cloud • quran.com • aladhan.com',
-              textAlign: TextAlign.center,
-              style: TextStyle(
-                  fontSize: 11,
-                  color: isDark ? Colors.white30 : Colors.black38),
+            child: Column(
+              children: [
+                Text(
+                  'Kur\'an-ı Kerim  v3.0',
+                  style: TextStyle(
+                      fontSize: 13, fontWeight: FontWeight.w700, color: gold),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  'API: alquran.cloud • quran.com • aladhan.com',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                      fontSize: 11,
+                      color: isDark ? Colors.white30 : Colors.black38),
+                ),
+              ],
             ),
           ),
         ],
