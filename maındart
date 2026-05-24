@@ -4779,50 +4779,978 @@ class _JuzDetailScreenState extends State<JuzDetailScreen> {
   }
 }
 
+//  MUSHAF TAB  —  Sayfa bazlı tam Mushaf görünümü
 // ─────────────────────────────────────────────
-//  MUSHAF TAB
-// ─────────────────────────────────────────────
-class MushafTab extends StatelessWidget {
+class MushafTab extends StatefulWidget {
   final String reciter;
   const MushafTab({super.key, required this.reciter});
   @override
+  State<MushafTab> createState() => _MushafTabState();
+}
+
+class _MushafTabState extends State<MushafTab> {
+  final PageController _pageCtrl = PageController();
+  int _currentPage = 1; // 1..604
+  bool _loading = false;
+  String _error = '';
+  Map<int, List<Map<String, dynamic>>> _pageCache = {};
+  double _fontSize = 22;
+  bool _showNav = true;
+
+  static const int kTotalPages = 604;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadPage(1);
+    _loadSavedPage();
+  }
+
+  Future<void> _loadSavedPage() async {
+    final p = await SharedPreferences.getInstance();
+    final saved = p.getInt('mushaf_page') ?? 1;
+    if (saved != 1 && mounted) {
+      setState(() => _currentPage = saved);
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (_pageCtrl.hasClients) {
+          _pageCtrl.jumpToPage(saved - 1);
+        }
+      });
+      _loadPage(saved);
+    }
+  }
+
+  Future<void> _loadPage(int page) async {
+    if (_pageCache.containsKey(page)) return;
+    if (mounted)
+      setState(() {
+        _loading = true;
+        _error = '';
+      });
+    try {
+      final r = await http
+          .get(Uri.parse(
+              'https://api.alquran.cloud/v1/page/$page/quran-uthmani'))
+          .timeout(const Duration(seconds: 20));
+      if (r.statusCode != 200) throw Exception('HTTP ${r.statusCode}');
+      final data = (jsonDecode(r.body) as Map<String, dynamic>)['data']
+          as Map<String, dynamic>;
+      final ayahs = (data['ayahs'] as List)
+          .map((e) => Map<String, dynamic>.from(e as Map))
+          .toList();
+      if (mounted) {
+        setState(() {
+          _pageCache[page] = ayahs;
+          _loading = false;
+        });
+      }
+      // Önceden yükle
+      if (page < kTotalPages && !_pageCache.containsKey(page + 1)) {
+        _prefetchPage(page + 1);
+      }
+      if (page > 1 && !_pageCache.containsKey(page - 1)) {
+        _prefetchPage(page - 1);
+      }
+    } catch (e) {
+      if (mounted)
+        setState(() {
+          _loading = false;
+          _error = e.toString();
+        });
+    }
+  }
+
+  Future<void> _prefetchPage(int page) async {
+    if (_pageCache.containsKey(page)) return;
+    try {
+      final r = await http
+          .get(Uri.parse(
+              'https://api.alquran.cloud/v1/page/$page/quran-uthmani'))
+          .timeout(const Duration(seconds: 15));
+      if (r.statusCode == 200) {
+        final data = (jsonDecode(r.body) as Map<String, dynamic>)['data']
+            as Map<String, dynamic>;
+        final ayahs = (data['ayahs'] as List)
+            .map((e) => Map<String, dynamic>.from(e as Map))
+            .toList();
+        if (mounted) setState(() => _pageCache[page] = ayahs);
+      }
+    } catch (_) {}
+  }
+
+  void _goToPage(int page) {
+    page = page.clamp(1, kTotalPages);
+    setState(() => _currentPage = page);
+    _pageCtrl.animateToPage(
+      page - 1,
+      duration: const Duration(milliseconds: 400),
+      curve: Curves.easeInOut,
+    );
+    _loadPage(page);
+    SharedPreferences.getInstance().then((p) => p.setInt('mushaf_page', page));
+  }
+
+  void _showJumpDialog() {
+    final ctrl = TextEditingController(text: '$_currentPage');
+    showDialog(
+      context: context,
+      builder: (ctx) {
+        final gold = Theme.of(ctx).colorScheme.primary;
+        return AlertDialog(
+          title: Text('Sayfaya Git',
+              style: TextStyle(
+                  color: gold, fontSize: 16, fontWeight: FontWeight.w700)),
+          content: TextField(
+            controller: ctrl,
+            keyboardType: TextInputType.number,
+            decoration: InputDecoration(
+              labelText: '1 – $kTotalPages',
+              border:
+                  OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+            ),
+            autofocus: true,
+          ),
+          actions: [
+            TextButton(
+                onPressed: () => Navigator.pop(ctx),
+                child: const Text('İptal')),
+            ElevatedButton(
+              style: ElevatedButton.styleFrom(
+                  backgroundColor: gold, foregroundColor: Colors.black),
+              onPressed: () {
+                final v = int.tryParse(ctrl.text);
+                if (v != null) {
+                  _goToPage(v);
+                  Navigator.pop(ctx);
+                }
+              },
+              child: const Text('Git'),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  @override
+  void dispose() {
+    _pageCtrl.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
     final gold = Theme.of(context).colorScheme.primary;
-    return Center(
-        child: Column(mainAxisSize: MainAxisSize.min, children: [
-      Icon(Icons.menu_book, color: gold, size: 48),
-      const SizedBox(height: 12),
-      Text(L.mushaf,
-          style: TextStyle(
-              color: gold, fontSize: 18, fontWeight: FontWeight.w600)),
-      const SizedBox(height: 8),
-      Text('Mushaf görünümü yakında...',
-          style: TextStyle(color: gold.withOpacity(0.6), fontSize: 13)),
-    ]));
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final bg = isDark ? const Color(0xFF0D1117) : const Color(0xFFFAF7F0);
+
+    return Scaffold(
+      backgroundColor: bg,
+      body: Stack(children: [
+        // ── Sayfa görünümü ──
+        PageView.builder(
+          controller: _pageCtrl,
+          itemCount: kTotalPages,
+          onPageChanged: (i) {
+            final p = i + 1;
+            setState(() => _currentPage = p);
+            _loadPage(p);
+            SharedPreferences.getInstance()
+                .then((pref) => pref.setInt('mushaf_page', p));
+          },
+          itemBuilder: (ctx, i) {
+            final page = i + 1;
+            final ayahs = _pageCache[page];
+            if (ayahs == null) {
+              if (!_loading) _loadPage(page);
+              return Center(
+                  child:
+                      CircularProgressIndicator(color: gold, strokeWidth: 2));
+            }
+            return GestureDetector(
+              onTap: () => setState(() => _showNav = !_showNav),
+              child: _buildPageContent(ayahs, page, gold, isDark, bg),
+            );
+          },
+        ),
+
+        // ── Üst bar ──
+        AnimatedPositioned(
+          duration: const Duration(milliseconds: 250),
+          curve: Curves.easeInOut,
+          top: _showNav ? 0 : -80,
+          left: 0,
+          right: 0,
+          child: Container(
+            padding: EdgeInsets.only(
+                top: MediaQuery.of(context).padding.top + 8,
+                left: 16,
+                right: 16,
+                bottom: 10),
+            decoration: BoxDecoration(
+              color: isDark
+                  ? const Color(0xFF161B22).withOpacity(0.95)
+                  : Colors.white.withOpacity(0.95),
+              border: Border(bottom: BorderSide(color: gold.withOpacity(0.2))),
+            ),
+            child: Row(children: [
+              Text(L.mushaf,
+                  style: GoogleFonts.tajawal(
+                      fontSize: 18, fontWeight: FontWeight.w800, color: gold)),
+              const Spacer(),
+              // Font küçült
+              IconButton(
+                  icon: const Icon(Icons.text_decrease, size: 20),
+                  color: gold,
+                  onPressed: () => setState(() =>
+                      _fontSize = (_fontSize - 2).clamp(14, 34).toDouble())),
+              // Font büyüt
+              IconButton(
+                  icon: const Icon(Icons.text_increase, size: 20),
+                  color: gold,
+                  onPressed: () => setState(() =>
+                      _fontSize = (_fontSize + 2).clamp(14, 34).toDouble())),
+              // Sayfa atla
+              GestureDetector(
+                onTap: _showJumpDialog,
+                child: Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                  decoration: BoxDecoration(
+                      color: gold.withOpacity(0.12),
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: gold.withOpacity(0.3))),
+                  child: Text('$_currentPage / $kTotalPages',
+                      style: TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w700,
+                          color: gold)),
+                ),
+              ),
+            ]),
+          ),
+        ),
+
+        // ── Alt nav ──
+        AnimatedPositioned(
+          duration: const Duration(milliseconds: 250),
+          curve: Curves.easeInOut,
+          bottom: _showNav ? 0 : -70,
+          left: 0,
+          right: 0,
+          child: Container(
+            padding: EdgeInsets.only(
+                bottom: MediaQuery.of(context).padding.bottom + 8,
+                top: 10,
+                left: 16,
+                right: 16),
+            decoration: BoxDecoration(
+              color: isDark
+                  ? const Color(0xFF161B22).withOpacity(0.95)
+                  : Colors.white.withOpacity(0.95),
+              border: Border(top: BorderSide(color: gold.withOpacity(0.2))),
+            ),
+            child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  // Önceki
+                  _navBtn(
+                    icon: Icons.arrow_back_ios_rounded,
+                    label: 'Önceki',
+                    enabled: _currentPage > 1,
+                    gold: gold,
+                    isDark: isDark,
+                    onTap: () => _goToPage(_currentPage - 1),
+                  ),
+                  // Slider
+                  Expanded(
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 8),
+                      child: SliderTheme(
+                        data: SliderTheme.of(context).copyWith(
+                          activeTrackColor: gold,
+                          inactiveTrackColor: gold.withOpacity(0.2),
+                          thumbColor: gold,
+                          overlayColor: gold.withOpacity(0.2),
+                          trackHeight: 3,
+                          thumbShape: const RoundSliderThumbShape(
+                              enabledThumbRadius: 7),
+                        ),
+                        child: Slider(
+                          value: _currentPage.toDouble(),
+                          min: 1,
+                          max: kTotalPages.toDouble(),
+                          onChanged: (v) => _goToPage(v.round()),
+                        ),
+                      ),
+                    ),
+                  ),
+                  // Sonraki
+                  _navBtn(
+                    icon: Icons.arrow_forward_ios_rounded,
+                    label: 'Sonraki',
+                    enabled: _currentPage < kTotalPages,
+                    gold: gold,
+                    isDark: isDark,
+                    onTap: () => _goToPage(_currentPage + 1),
+                    iconFirst: false,
+                  ),
+                ]),
+          ),
+        ),
+
+        // ── Hata overlay ──
+        if (_error.isNotEmpty)
+          Center(child: _errorCenter(_error, () => _loadPage(_currentPage))),
+      ]),
+    );
+  }
+
+  Widget _buildPageContent(List<Map<String, dynamic>> ayahs, int page,
+      Color gold, bool isDark, Color bg) {
+    // Gruplama: sure başlıkları için
+    String? currentSurahName;
+    final widgets = <Widget>[];
+
+    for (int i = 0; i < ayahs.length; i++) {
+      final a = ayahs[i];
+      final surahN = a['surah']?['englishName'] as String? ?? '';
+      final surahAr = a['surah']?['name'] as String? ?? '';
+      final ayahNum = a['numberInSurah'] as int? ?? 0;
+      final text = a['text'] as String? ?? '';
+
+      // Sure başlığı
+      if (surahAr != currentSurahName) {
+        currentSurahName = surahAr;
+        widgets.add(_surahHeader(surahAr, surahN, ayahNum == 1, gold, isDark));
+      }
+
+      widgets.add(Text.rich(
+        TextSpan(children: [
+          TextSpan(
+            text: text,
+            style: GoogleFonts.notoNaskhArabic(
+                fontSize: _fontSize,
+                height: 2.0,
+                color:
+                    isDark ? const Color(0xFFE8DCC8) : const Color(0xFF1A1208)),
+          ),
+          WidgetSpan(
+            alignment: PlaceholderAlignment.middle,
+            child: _ayahNumber(ayahNum, gold, isDark),
+          ),
+        ]),
+        textAlign: TextAlign.justify,
+        textDirection: TextDirection.rtl,
+      ));
+    }
+
+    return Container(
+      color: bg,
+      child: SingleChildScrollView(
+        padding: const EdgeInsets.fromLTRB(18, 90, 18, 80),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            // Sayfa numarası (üstte ortada)
+            Center(
+              child: Container(
+                margin: const EdgeInsets.only(bottom: 12),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+                decoration: BoxDecoration(
+                    color: gold.withOpacity(0.1),
+                    borderRadius: BorderRadius.circular(6),
+                    border: Border.all(color: gold.withOpacity(0.25))),
+                child: Text('صفحة $page',
+                    style: GoogleFonts.notoNaskhArabic(
+                        fontSize: 12, color: gold, fontWeight: FontWeight.w600),
+                    textDirection: TextDirection.rtl),
+              ),
+            ),
+            ...widgets,
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _surahHeader(String arabic, String english, bool showBasmala,
+      Color gold, bool isDark) {
+    return Container(
+      margin: const EdgeInsets.symmetric(vertical: 14),
+      padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 20),
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+            colors: isDark
+                ? [const Color(0xFF1A2332), const Color(0xFF0D1117)]
+                : [const Color(0xFFFAF3E0), const Color(0xFFEDE3D0)]),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: gold.withOpacity(0.35)),
+      ),
+      child: Column(children: [
+        Text(arabic,
+            style: GoogleFonts.notoNaskhArabic(
+                fontSize: 26, color: gold, fontWeight: FontWeight.w700),
+            textDirection: TextDirection.rtl,
+            textAlign: TextAlign.center),
+        Text(english,
+            style: TextStyle(
+                fontSize: 12, color: isDark ? Colors.white54 : Colors.black45)),
+        if (showBasmala) ...[
+          const SizedBox(height: 8),
+          Text('بِسْمِ اللَّهِ الرَّحْمَٰنِ الرَّحِيمِ',
+              style: GoogleFonts.notoNaskhArabic(
+                  fontSize: 18,
+                  color:
+                      isDark ? Colors.white70 : Colors.black.withOpacity(0.6)),
+              textDirection: TextDirection.rtl,
+              textAlign: TextAlign.center),
+        ],
+      ]),
+    );
+  }
+
+  Widget _ayahNumber(int num, Color gold, bool isDark) {
+    return Container(
+      width: 28,
+      height: 28,
+      margin: const EdgeInsets.symmetric(horizontal: 4),
+      decoration: BoxDecoration(
+          shape: BoxShape.circle,
+          color: gold.withOpacity(0.12),
+          border: Border.all(color: gold.withOpacity(0.4))),
+      child: Center(
+          child: Text('$num',
+              style: TextStyle(
+                  fontSize: 9, fontWeight: FontWeight.w700, color: gold))),
+    );
+  }
+
+  Widget _navBtn({
+    required IconData icon,
+    required String label,
+    required bool enabled,
+    required Color gold,
+    required bool isDark,
+    required VoidCallback onTap,
+    bool iconFirst = true,
+  }) {
+    final color = enabled ? gold : gold.withOpacity(0.3);
+    return GestureDetector(
+      onTap: enabled ? onTap : null,
+      child: Row(mainAxisSize: MainAxisSize.min, children: [
+        if (iconFirst) Icon(icon, color: color, size: 16),
+        if (iconFirst) const SizedBox(width: 4),
+        Text(label,
+            style: TextStyle(
+                fontSize: 12, color: color, fontWeight: FontWeight.w600)),
+        if (!iconFirst) const SizedBox(width: 4),
+        if (!iconFirst) Icon(icon, color: color, size: 16),
+      ]),
+    );
   }
 }
 
 // ─────────────────────────────────────────────
-//  AUDIO TAB
+//  AUDIO TAB  —  Sure bazlı sesli dinleme
 // ─────────────────────────────────────────────
-class AudioTab extends StatelessWidget {
+class AudioTab extends StatefulWidget {
   final List<SurahMeta> surahs;
   const AudioTab({super.key, required this.surahs});
   @override
+  State<AudioTab> createState() => _AudioTabState();
+}
+
+class _AudioTabState extends State<AudioTab> with TickerProviderStateMixin {
+  final AudioPlayer _player = AudioPlayer();
+  int? _playingSurah;
+  bool _isPlaying = false;
+  bool _isLoading = false;
+  Duration _position = Duration.zero;
+  Duration _duration = Duration.zero;
+  double _playbackSpeed = 1.0;
+  String _reciter = 'ar.alafasy';
+  final _search = TextEditingController();
+  List<SurahMeta> _filtered = [];
+  late AnimationController _waveCtrl;
+
+  static const Map<String, String> kReciterAudioIds = {
+    'ar.alafasy': 'Alafasy_128kbps',
+    'ar.maher': 'MaherAlMuaiqly128kbps',
+    'ar.minshawi': 'Minshawy_Murattal_128kbps',
+    'ar.husary': 'Husary_128kbps',
+    'ar.abdulbasit': 'AbdulSamad_128kbps',
+    'ar.ghamadi': 'Ghamadi_40kbps',
+  };
+
+  @override
+  void initState() {
+    super.initState();
+    _filtered = widget.surahs;
+    _search.addListener(_onSearch);
+    _waveCtrl = AnimationController(
+        vsync: this, duration: const Duration(milliseconds: 800));
+
+    _player.playerStateStream.listen((state) {
+      if (mounted) {
+        setState(() {
+          _isPlaying = state.playing;
+          _isLoading = state.processingState == ProcessingState.loading ||
+              state.processingState == ProcessingState.buffering;
+        });
+        if (state.playing)
+          _waveCtrl.repeat(reverse: true);
+        else
+          _waveCtrl.stop();
+      }
+    });
+
+    _player.positionStream.listen((pos) {
+      if (mounted) setState(() => _position = pos);
+    });
+
+    _player.durationStream.listen((dur) {
+      if (mounted && dur != null) setState(() => _duration = dur);
+    });
+
+    _player.processingStateStream.listen((ps) {
+      if (ps == ProcessingState.completed && mounted) {
+        setState(() {
+          _isPlaying = false;
+          _position = Duration.zero;
+        });
+        _waveCtrl.stop();
+      }
+    });
+
+    _loadReciter();
+  }
+
+  Future<void> _loadReciter() async {
+    final p = await SharedPreferences.getInstance();
+    if (mounted)
+      setState(() => _reciter = p.getString('reciter') ?? 'ar.alafasy');
+  }
+
+  void _onSearch() {
+    final q = _search.text.toLowerCase();
+    setState(() {
+      _filtered = q.isEmpty
+          ? widget.surahs
+          : widget.surahs
+              .where((s) =>
+                  s.englishName.toLowerCase().contains(q) ||
+                  s.name.contains(_search.text) ||
+                  s.number.toString() == q)
+              .toList();
+    });
+  }
+
+  String _surahAudioUrl(int surahNum) {
+    final audioId = kReciterAudioIds[_reciter] ?? 'Alafasy_128kbps';
+    final s = surahNum.toString().padLeft(3, '0');
+    return 'https://download.quranicaudio.com/quran/$audioId/$s.mp3';
+  }
+
+  Future<void> _playSurah(int surahNum) async {
+    if (_playingSurah == surahNum && _isPlaying) {
+      await _player.pause();
+      return;
+    }
+    if (_playingSurah == surahNum && !_isPlaying) {
+      await _player.play();
+      return;
+    }
+    setState(() {
+      _playingSurah = surahNum;
+      _isLoading = true;
+      _position = Duration.zero;
+    });
+    try {
+      await _player.setUrl(_surahAudioUrl(surahNum));
+      await _player.setSpeed(_playbackSpeed);
+      await _player.play();
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+          _playingSurah = null;
+        });
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+            content: Text('Ses yüklenemedi: $e'), backgroundColor: Colors.red));
+      }
+    }
+  }
+
+  String _fmtDur(Duration d) {
+    final m = d.inMinutes.remainder(60).toString().padLeft(2, '0');
+    final s = d.inSeconds.remainder(60).toString().padLeft(2, '0');
+    return '${d.inHours > 0 ? '${d.inHours}:' : ''}$m:$s';
+  }
+
+  @override
+  void dispose() {
+    _player.dispose();
+    _waveCtrl.dispose();
+    _search.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
     final gold = Theme.of(context).colorScheme.primary;
-    return Center(
-        child: Column(mainAxisSize: MainAxisSize.min, children: [
-      Icon(Icons.headphones, color: gold, size: 48),
-      const SizedBox(height: 12),
-      Text(L.audio,
-          style: TextStyle(
-              color: gold, fontSize: 18, fontWeight: FontWeight.w600)),
-      const SizedBox(height: 8),
-      Text('Sesli dinleme yakında...',
-          style: TextStyle(color: gold.withOpacity(0.6), fontSize: 13)),
-    ]));
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+
+    return Column(children: [
+      // ── Mini Player (çalan varsa) ──
+      if (_playingSurah != null) _buildMiniPlayer(gold, isDark),
+
+      // ── Arama ──
+      Padding(
+        padding: const EdgeInsets.fromLTRB(12, 10, 12, 4),
+        child: TextField(
+          controller: _search,
+          decoration: InputDecoration(
+            hintText: 'Sure ara...',
+            prefixIcon: const Icon(Icons.search, size: 20),
+            filled: true,
+            contentPadding:
+                const EdgeInsets.symmetric(vertical: 10, horizontal: 14),
+            border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(12),
+                borderSide: BorderSide.none),
+          ),
+        ),
+      ),
+
+      // ── Sure listesi ──
+      Expanded(
+        child: widget.surahs.isEmpty
+            ? _loadingCenter()
+            : ListView.builder(
+                padding: const EdgeInsets.fromLTRB(12, 4, 12, 12),
+                itemCount: _filtered.length,
+                itemBuilder: (ctx, i) =>
+                    _buildSurahRow(_filtered[i], gold, isDark),
+              ),
+      ),
+    ]);
   }
+
+  Widget _buildMiniPlayer(Color gold, bool isDark) {
+    final surah = widget.surahs.firstWhere((s) => s.number == _playingSurah,
+        orElse: () => widget.surahs.isNotEmpty
+            ? widget.surahs.first
+            : SurahMeta(
+                number: 0,
+                name: '',
+                englishName: '',
+                englishMeaning: '',
+                ayahCount: 0,
+                isMeccan: true));
+    final progress = _duration.inSeconds > 0
+        ? (_position.inSeconds / _duration.inSeconds).clamp(0.0, 1.0)
+        : 0.0;
+
+    return Container(
+      margin: const EdgeInsets.fromLTRB(12, 8, 12, 0),
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+            colors: [gold.withOpacity(0.9), gold.withOpacity(0.5)],
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight),
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: [
+          BoxShadow(
+              color: gold.withOpacity(0.3),
+              blurRadius: 12,
+              offset: const Offset(0, 4))
+        ],
+      ),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Row(children: [
+          // Dalga animasyonu
+          AnimatedBuilder(
+            animation: _waveCtrl,
+            builder: (ctx, _) => Row(
+              mainAxisSize: MainAxisSize.min,
+              children: List.generate(4, (i) {
+                final h = _isPlaying
+                    ? (8 + 14 * math.sin(_waveCtrl.value * math.pi + i * 0.8))
+                        .abs()
+                    : 4.0;
+                return Container(
+                  width: 3,
+                  height: h,
+                  margin: const EdgeInsets.symmetric(horizontal: 1.5),
+                  decoration: BoxDecoration(
+                      color: Colors.black.withOpacity(0.7),
+                      borderRadius: BorderRadius.circular(2)),
+                );
+              }),
+            ),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child:
+                Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Text(surah.englishName,
+                  style: const TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w800,
+                      color: Colors.black87)),
+              Text(surah.name,
+                  style: GoogleFonts.notoNaskhArabic(
+                      fontSize: 14, color: Colors.black54),
+                  textDirection: TextDirection.rtl),
+            ]),
+          ),
+          // Oynatma kontrolleri
+          Row(mainAxisSize: MainAxisSize.min, children: [
+            // Geri 10s
+            GestureDetector(
+              onTap: () => _player.seek(Duration(
+                  seconds: (_position.inSeconds - 10)
+                      .clamp(0, _duration.inSeconds))),
+              child: Container(
+                width: 34,
+                height: 34,
+                decoration: BoxDecoration(
+                    color: Colors.black.withOpacity(0.1),
+                    shape: BoxShape.circle),
+                child: const Icon(Icons.replay_10,
+                    color: Colors.black87, size: 18),
+              ),
+            ),
+            const SizedBox(width: 8),
+            // Oynat/Durdur
+            GestureDetector(
+              onTap: () => _playSurah(_playingSurah!),
+              child: Container(
+                width: 42,
+                height: 42,
+                decoration: const BoxDecoration(
+                    color: Colors.black87, shape: BoxShape.circle),
+                child: _isLoading
+                    ? const Padding(
+                        padding: EdgeInsets.all(10),
+                        child: CircularProgressIndicator(
+                            color: Colors.white, strokeWidth: 2))
+                    : Icon(_isPlaying ? Icons.pause : Icons.play_arrow,
+                        color: Colors.white, size: 22),
+              ),
+            ),
+            const SizedBox(width: 8),
+            // İleri 10s
+            GestureDetector(
+              onTap: () => _player.seek(Duration(
+                  seconds: (_position.inSeconds + 10)
+                      .clamp(0, _duration.inSeconds))),
+              child: Container(
+                width: 34,
+                height: 34,
+                decoration: BoxDecoration(
+                    color: Colors.black.withOpacity(0.1),
+                    shape: BoxShape.circle),
+                child: const Icon(Icons.forward_10,
+                    color: Colors.black87, size: 18),
+              ),
+            ),
+            const SizedBox(width: 8),
+            // Hız
+            GestureDetector(
+              onTap: () {
+                final speeds = [0.75, 1.0, 1.25, 1.5, 2.0];
+                final idx = speeds.indexOf(_playbackSpeed);
+                final next = speeds[(idx + 1) % speeds.length];
+                setState(() => _playbackSpeed = next);
+                _player.setSpeed(next);
+              },
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                decoration: BoxDecoration(
+                    color: Colors.black.withOpacity(0.1),
+                    borderRadius: BorderRadius.circular(8)),
+                child: Text('${_playbackSpeed}x',
+                    style: const TextStyle(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w800,
+                        color: Colors.black87)),
+              ),
+            ),
+          ]),
+        ]),
+        const SizedBox(height: 10),
+        // Progress bar
+        Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+          SliderTheme(
+            data: SliderTheme.of(context).copyWith(
+              activeTrackColor: Colors.black87,
+              inactiveTrackColor: Colors.black26,
+              thumbColor: Colors.black87,
+              overlayColor: Colors.black12,
+              trackHeight: 3,
+              thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 6),
+            ),
+            child: Slider(
+              value: progress,
+              onChanged: (v) => _player
+                  .seek(Duration(seconds: (v * _duration.inSeconds).round())),
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 4),
+            child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Text(_fmtDur(_position),
+                      style:
+                          const TextStyle(fontSize: 10, color: Colors.black54)),
+                  Text(_fmtDur(_duration),
+                      style:
+                          const TextStyle(fontSize: 10, color: Colors.black54)),
+                ]),
+          ),
+        ]),
+      ]),
+    );
+  }
+
+  Widget _buildSurahRow(SurahMeta surah, Color gold, bool isDark) {
+    final isThis = _playingSurah == surah.number;
+    final pColor = isThis ? gold : null;
+
+    return Card(
+      margin: const EdgeInsets.only(bottom: 5),
+      child: InkWell(
+        onTap: () => _playSurah(surah.number),
+        borderRadius: BorderRadius.circular(14),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+          decoration: isThis
+              ? BoxDecoration(
+                  borderRadius: BorderRadius.circular(14),
+                  color: gold.withOpacity(0.08),
+                  border: Border.all(color: gold.withOpacity(0.3)))
+              : null,
+          child: Row(children: [
+            // Numara / oynatma göstergesi
+            Container(
+              width: 40,
+              height: 40,
+              decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: isThis ? gold : gold.withOpacity(0.1),
+                  border: Border.all(
+                      color: isThis ? gold : gold.withOpacity(0.25))),
+              child: isThis && _isLoading
+                  ? Padding(
+                      padding: const EdgeInsets.all(10),
+                      child: CircularProgressIndicator(
+                          color: Colors.white, strokeWidth: 2))
+                  : isThis && _isPlaying
+                      ? AnimatedBuilder(
+                          animation: _waveCtrl,
+                          builder: (c, _) => Row(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: List.generate(3, (i) {
+                                final h = 4 +
+                                    8 *
+                                        math
+                                            .sin(_waveCtrl.value * math.pi +
+                                                i * 1.0)
+                                            .abs();
+                                return Container(
+                                  width: 2.5,
+                                  height: h,
+                                  margin:
+                                      const EdgeInsets.symmetric(horizontal: 1),
+                                  decoration: BoxDecoration(
+                                      color: Colors.white,
+                                      borderRadius: BorderRadius.circular(2)),
+                                );
+                              })))
+                      : isThis
+                          ? const Icon(Icons.play_arrow,
+                              color: Colors.white, size: 20)
+                          : Center(
+                              child: Text('${surah.number}',
+                                  style: TextStyle(
+                                      fontSize: 12,
+                                      fontWeight: FontWeight.w700,
+                                      color: gold))),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+                child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                  Text(surah.englishName,
+                      style: TextStyle(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w600,
+                          color: pColor)),
+                  const SizedBox(height: 2),
+                  Row(children: [
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 6, vertical: 1),
+                      decoration: BoxDecoration(
+                          color: (surah.isMeccan ? Colors.orange : Colors.green)
+                              .withOpacity(0.15),
+                          borderRadius: BorderRadius.circular(4)),
+                      child: Text(surah.isMeccan ? L.meccan : L.medinan,
+                          style: TextStyle(
+                              fontSize: 9,
+                              color:
+                                  surah.isMeccan ? Colors.orange : Colors.green,
+                              fontWeight: FontWeight.w600)),
+                    ),
+                    const SizedBox(width: 6),
+                    Text('${surah.ayahCount} ${L.verses}',
+                        style: TextStyle(
+                            fontSize: 11,
+                            color: isDark ? Colors.white38 : Colors.black38)),
+                  ]),
+                ])),
+            Text(surah.name,
+                style: GoogleFonts.notoNaskhArabic(
+                    fontSize: 20, color: isThis ? gold : gold.withOpacity(0.7)),
+                textDirection: TextDirection.rtl),
+          ]),
+        ),
+      ),
+    );
+  }
+}
+
+Widget _playerBtn({
+  IconData? icon,
+  required double size,
+  required VoidCallback onTap,
+  bool isPrimary = false,
+  bool isLoading = false,
+}) {
+  return GestureDetector(
+    onTap: onTap,
+    child: Container(
+      width: size,
+      height: size,
+      decoration: BoxDecoration(
+          color: isPrimary ? Colors.black87 : Colors.black.withOpacity(0.1),
+          shape: BoxShape.circle),
+      child: isLoading
+          ? Padding(
+              padding: EdgeInsets.all(size * 0.22),
+              child: const CircularProgressIndicator(
+                  color: Colors.white, strokeWidth: 2))
+          : Icon(icon,
+              color: isPrimary ? Colors.white : Colors.black87,
+              size: size * 0.48),
+    ),
+  );
 }
 
 // ─────────────────────────────────────────────
@@ -4872,8 +5800,8 @@ class SurahDetailScreen extends StatelessWidget {
   }
 }
 
-// ─────────────────────────────────────────────
-//  QIBLA EKRANI
+/// ─────────────────────────────────────────────
+//  QIBLA EKRANI  —  Profesyonel yeniden tasarım
 // ─────────────────────────────────────────────
 class QiblaScreen extends StatefulWidget {
   const QiblaScreen({super.key});
@@ -4881,16 +5809,45 @@ class QiblaScreen extends StatefulWidget {
   State<QiblaScreen> createState() => _QiblaScreenState();
 }
 
-class _QiblaScreenState extends State<QiblaScreen> {
+class _QiblaScreenState extends State<QiblaScreen>
+    with TickerProviderStateMixin {
   double? _qiblaAngle;
   double _heading = 0;
+  double _lat = 0;
+  double _lon = 0;
   bool _loading = true;
   String _error = '';
+  String _cityName = '';
   StreamSubscription<CompassEvent>? _compassSub;
+
+  // Animasyonlar
+  late AnimationController _rotateCtrl;
+  late AnimationController _pulseCtrl;
+  late Animation<double> _pulseAnim;
+  late AnimationController _appearCtrl;
+  late Animation<double> _appearAnim;
+
+  double _smoothHeading = 0;
+  double _prevHeading = 0;
+  Timer? _smoothTimer;
 
   @override
   void initState() {
     super.initState();
+
+    _rotateCtrl = AnimationController(
+        vsync: this, duration: const Duration(milliseconds: 300));
+
+    _pulseCtrl =
+        AnimationController(vsync: this, duration: const Duration(seconds: 2));
+    _pulseAnim = Tween<double>(begin: 1.0, end: 1.08)
+        .animate(CurvedAnimation(parent: _pulseCtrl, curve: Curves.easeInOut));
+    _pulseCtrl.repeat(reverse: true);
+
+    _appearCtrl = AnimationController(
+        vsync: this, duration: const Duration(milliseconds: 600));
+    _appearAnim = CurvedAnimation(parent: _appearCtrl, curve: Curves.easeOut);
+
     _initQibla();
   }
 
@@ -4902,45 +5859,108 @@ class _QiblaScreenState extends State<QiblaScreen> {
       });
     try {
       var perm = await Geolocator.checkPermission();
-      if (perm == LocationPermission.denied)
+      if (perm == LocationPermission.denied) {
         perm = await Geolocator.requestPermission();
-      if (perm == LocationPermission.deniedForever)
+      }
+      if (perm == LocationPermission.deniedForever) {
         throw Exception(L.locationPermDenied);
+      }
+
+      // Önce son bilinen konumu hızlıca al, sonra doğru konumu al
+      Position? lastPos = await Geolocator.getLastKnownPosition();
+      if (lastPos != null && mounted) {
+        _setPosition(lastPos);
+      }
+
       final pos = await Geolocator.getCurrentPosition(
           locationSettings: const LocationSettings(
               accuracy: LocationAccuracy.medium,
-              timeLimit: Duration(seconds: 15)));
-      final angle = _calcQibla(pos.latitude, pos.longitude);
-      if (mounted)
-        setState(() {
-          _qiblaAngle = angle;
-          _loading = false;
-        });
-      _compassSub = FlutterCompass.events?.listen((e) {
-        if (mounted && e.heading != null) setState(() => _heading = e.heading!);
-      });
+              timeLimit: Duration(seconds: 10)));
+      if (mounted) _setPosition(pos);
     } catch (e) {
       if (mounted)
         setState(() {
           _loading = false;
           _error = e.toString();
         });
+      return;
     }
+
+    // Pusula başlat
+    _compassSub?.cancel();
+    _compassSub = FlutterCompass.events?.listen((e) {
+      if (!mounted || e.heading == null) return;
+      double raw = e.heading!;
+
+      // Smooth geçiş: kısa yol hesabı
+      double diff = raw - _prevHeading;
+      if (diff > 180) diff -= 360;
+      if (diff < -180) diff += 360;
+      _smoothHeading = _prevHeading + diff * 0.3;
+      _prevHeading = _smoothHeading;
+
+      if (mounted) setState(() => _heading = _smoothHeading);
+    });
+  }
+
+  void _setPosition(Position pos) {
+    final angle = _calcQibla(pos.latitude, pos.longitude);
+    setState(() {
+      _lat = pos.latitude;
+      _lon = pos.longitude;
+      _qiblaAngle = angle;
+      _loading = false;
+    });
+    _appearCtrl.forward(from: 0);
+    _getCityName(pos.latitude, pos.longitude);
+  }
+
+  Future<void> _getCityName(double lat, double lon) async {
+    try {
+      final marks = await placemarkFromCoordinates(lat, lon);
+      if (marks.isNotEmpty && mounted) {
+        setState(() => _cityName =
+            marks.first.locality ?? marks.first.subAdministrativeArea ?? '');
+      }
+    } catch (_) {}
   }
 
   double _calcQibla(double lat, double lon) {
     final dLon = (kKaabaLon - lon) * math.pi / 180;
-    final lat1 = lat * math.pi / 180;
-    final lat2 = kKaabaLat * math.pi / 180;
-    final y = math.sin(dLon) * math.cos(lat2);
-    final x = math.cos(lat1) * math.sin(lat2) -
-        math.sin(lat1) * math.cos(lat2) * math.cos(dLon);
+    final la1 = lat * math.pi / 180;
+    final la2 = kKaabaLat * math.pi / 180;
+    final y = math.sin(dLon) * math.cos(la2);
+    final x = math.cos(la1) * math.sin(la2) -
+        math.sin(la1) * math.cos(la2) * math.cos(dLon);
     return (math.atan2(y, x) * 180 / math.pi + 360) % 360;
+  }
+
+  double _calcDistance(double lat1, double lon1, double lat2, double lon2) {
+    const R = 6371.0;
+    final dLat = (lat2 - lat1) * math.pi / 180;
+    final dLon = (lon2 - lon1) * math.pi / 180;
+    final a = math.sin(dLat / 2) * math.sin(dLat / 2) +
+        math.cos(lat1 * math.pi / 180) *
+            math.cos(lat2 * math.pi / 180) *
+            math.sin(dLon / 2) *
+            math.sin(dLon / 2);
+    return R * 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a));
+  }
+
+  bool get _isAligned {
+    if (_qiblaAngle == null) return false;
+    double diff = (_qiblaAngle! - _heading).abs() % 360;
+    if (diff > 180) diff = 360 - diff;
+    return diff < 5;
   }
 
   @override
   void dispose() {
     _compassSub?.cancel();
+    _rotateCtrl.dispose();
+    _pulseCtrl.dispose();
+    _appearCtrl.dispose();
+    _smoothTimer?.cancel();
     super.dispose();
   }
 
@@ -4948,142 +5968,396 @@ class _QiblaScreenState extends State<QiblaScreen> {
   Widget build(BuildContext context) {
     final gold = Theme.of(context).colorScheme.primary;
     final isDark = Theme.of(context).brightness == Brightness.dark;
+    final bg = isDark ? const Color(0xFF0D1117) : const Color(0xFFF8F5F0);
+    final aligned = _isAligned;
+
     return Scaffold(
-      appBar: AppBar(title: Text(L.qiblaFinder)),
-      body: Column(children: [
-        Expanded(
-          child: _loading
-              ? _loadingCenter()
-              : _error.isNotEmpty
-                  ? _errorCenter(_error, _initQibla)
-                  : SingleChildScrollView(
-                      padding: const EdgeInsets.all(24),
-                      child: Column(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            Text(L.calibrate,
-                                style: TextStyle(
-                                    fontSize: 12,
-                                    color: isDark
-                                        ? Colors.white54
-                                        : Colors.black54),
-                                textAlign: TextAlign.center),
-                            const SizedBox(height: 32),
-                            SizedBox(
-                              width: 280,
-                              height: 280,
-                              child:
-                                  Stack(alignment: Alignment.center, children: [
-                                Container(
-                                  width: 280,
-                                  height: 280,
-                                  decoration: BoxDecoration(
-                                    shape: BoxShape.circle,
-                                    gradient: RadialGradient(
-                                        colors: isDark
-                                            ? [
-                                                const Color(0xFF1A2332),
-                                                const Color(0xFF0D1117)
-                                              ]
-                                            : [
-                                                const Color(0xFFFAF3E0),
-                                                const Color(0xFFEDE3D0)
-                                              ]),
-                                    border: Border.all(
-                                        color: gold.withOpacity(0.3), width: 2),
-                                  ),
-                                ),
-                                if (_qiblaAngle != null)
-                                  Transform.rotate(
-                                    angle: (_qiblaAngle! - _heading) *
-                                        math.pi /
-                                        180,
-                                    child: Column(
-                                        mainAxisSize: MainAxisSize.min,
-                                        children: [
-                                          Icon(Icons.navigation,
-                                              color: gold, size: 80),
-                                          const SizedBox(height: 4),
-                                          const Text('🕋',
-                                              style: TextStyle(fontSize: 24)),
-                                        ]),
-                                  ),
-                                Positioned(
-                                    top: 16,
-                                    child: Text('K',
-                                        style: const TextStyle(
-                                            color: Colors.red,
-                                            fontWeight: FontWeight.w800,
-                                            fontSize: 14))),
-                                Positioned(
-                                    bottom: 16,
-                                    child: Text('G',
-                                        style: TextStyle(
-                                            color: isDark
-                                                ? Colors.white38
-                                                : Colors.black38,
-                                            fontSize: 12))),
-                                Positioned(
-                                    left: 16,
-                                    child: Text('B',
-                                        style: TextStyle(
-                                            color: isDark
-                                                ? Colors.white38
-                                                : Colors.black38,
-                                            fontSize: 12))),
-                                Positioned(
-                                    right: 16,
-                                    child: Text('D',
-                                        style: TextStyle(
-                                            color: isDark
-                                                ? Colors.white38
-                                                : Colors.black38,
-                                            fontSize: 12))),
+      backgroundColor: bg,
+      appBar: AppBar(
+        title: Text(L.qiblaFinder),
+        actions: [
+          if (!_loading)
+            IconButton(
+              icon: const Icon(Icons.refresh_rounded),
+              onPressed: () {
+                _compassSub?.cancel();
+                _initQibla();
+              },
+            ),
+        ],
+      ),
+      body: _loading
+          ? _buildLoadingState(gold)
+          : _error.isNotEmpty
+              ? _errorCenter(_error, _initQibla)
+              : _buildCompassBody(gold, isDark, bg, aligned),
+    );
+  }
+
+  Widget _buildLoadingState(Color gold) {
+    return Center(
+        child: Column(mainAxisSize: MainAxisSize.min, children: [
+      SizedBox(
+        width: 60,
+        height: 60,
+        child: CircularProgressIndicator(color: gold, strokeWidth: 3),
+      ),
+      const SizedBox(height: 20),
+      Text(L.locationDetecting,
+          style: TextStyle(fontSize: 14, color: gold.withOpacity(0.7))),
+      const SizedBox(height: 8),
+      Text('GPS sinyali alınıyor...',
+          style: TextStyle(fontSize: 12, color: gold.withOpacity(0.4))),
+    ]));
+  }
+
+  Widget _buildCompassBody(Color gold, bool isDark, Color bg, bool aligned) {
+    if (_qiblaAngle == null) return _loadingCenter();
+
+    final needleAngle = (_qiblaAngle! - _heading) * math.pi / 180;
+    final dist = _calcDistance(_lat, _lon, kKaabaLat, kKaabaLon);
+
+    return FadeTransition(
+      opacity: _appearAnim,
+      child: SingleChildScrollView(
+        padding: const EdgeInsets.fromLTRB(20, 12, 20, 24),
+        child: Column(children: [
+          // ── Konum bilgisi ──
+          if (_cityName.isNotEmpty)
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+              decoration: BoxDecoration(
+                  color: gold.withOpacity(0.08),
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(color: gold.withOpacity(0.2))),
+              child: Row(mainAxisSize: MainAxisSize.min, children: [
+                Icon(Icons.location_on, color: gold, size: 14),
+                const SizedBox(width: 6),
+                Text(_cityName,
+                    style: TextStyle(
+                        fontSize: 13,
+                        color: gold,
+                        fontWeight: FontWeight.w600)),
+                const SizedBox(width: 10),
+                Text('${dist.toStringAsFixed(0)} km',
+                    style: TextStyle(
+                        fontSize: 11,
+                        color: isDark ? Colors.white38 : Colors.black38)),
+              ]),
+            ),
+
+          const SizedBox(height: 24),
+
+          // ── Pusula ──
+          ScaleTransition(
+            scale: aligned ? _pulseAnim : const AlwaysStoppedAnimation(1.0),
+            child: SizedBox(
+              width: 300,
+              height: 300,
+              child: Stack(alignment: Alignment.center, children: [
+                // Dış halka – derece çizgileri
+                CustomPaint(
+                    size: const Size(300, 300),
+                    painter: _CompassRingPainter(
+                        heading: _heading, gold: gold, isDark: isDark)),
+
+                // Ana daire
+                Container(
+                  width: 260,
+                  height: 260,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    gradient: RadialGradient(
+                        colors: isDark
+                            ? [const Color(0xFF1C2535), const Color(0xFF0D1117)]
+                            : [
+                                const Color(0xFFFDF8EE),
+                                const Color(0xFFEDE8D8)
                               ]),
-                            ),
-                            const SizedBox(height: 32),
-                            if (_qiblaAngle != null)
-                              Container(
-                                padding: const EdgeInsets.all(16),
-                                decoration: BoxDecoration(
-                                    color: gold.withOpacity(0.1),
-                                    borderRadius: BorderRadius.circular(14),
-                                    border: Border.all(
-                                        color: gold.withOpacity(0.3))),
-                                child: Column(children: [
-                                  Text(L.qiblaDir,
-                                      style: TextStyle(
-                                          fontSize: 12,
-                                          color: isDark
-                                              ? Colors.white54
-                                              : Colors.black54)),
-                                  const SizedBox(height: 4),
-                                  Text('${_qiblaAngle!.toStringAsFixed(1)}°',
-                                      style: TextStyle(
-                                          fontSize: 28,
-                                          fontWeight: FontWeight.w800,
-                                          color: gold)),
-                                  const SizedBox(height: 4),
-                                  Text(L.deviceHeading,
-                                      style: TextStyle(
-                                          fontSize: 12,
-                                          color: isDark
-                                              ? Colors.white54
-                                              : Colors.black54)),
-                                  Text('${_heading.toStringAsFixed(1)}°',
-                                      style: TextStyle(
-                                          fontSize: 20,
-                                          fontWeight: FontWeight.w600,
-                                          color: gold)),
-                                ]),
-                              ),
+                    boxShadow: [
+                      BoxShadow(
+                          color: gold.withOpacity(aligned ? 0.5 : 0.15),
+                          blurRadius: aligned ? 40 : 20,
+                          spreadRadius: aligned ? 6 : 0),
+                    ],
+                    border: Border.all(
+                        color: aligned ? gold : gold.withOpacity(0.3),
+                        width: aligned ? 2.5 : 1.5),
+                  ),
+                ),
+
+                // Hizalanma göstergesi
+                if (aligned)
+                  Container(
+                    width: 260,
+                    height: 260,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      gradient: RadialGradient(colors: [
+                        gold.withOpacity(0.15),
+                        Colors.transparent,
+                      ]),
+                    ),
+                  ),
+
+                // Yön etiketleri
+                ..._compassLabels(isDark),
+
+                // Kıble ibresi
+                Transform.rotate(
+                  angle: needleAngle,
+                  child: Column(mainAxisSize: MainAxisSize.min, children: [
+                    // Üst (Kabe yönü)
+                    Container(
+                      width: 4,
+                      height: 100,
+                      decoration: BoxDecoration(
+                        gradient: LinearGradient(
+                            colors: [gold, gold.withOpacity(0.3)],
+                            begin: Alignment.topCenter,
+                            end: Alignment.bottomCenter),
+                        borderRadius: const BorderRadius.vertical(
+                            top: Radius.circular(2)),
+                      ),
+                    ),
+                    // Merkez top
+                    Container(
+                      width: 18,
+                      height: 18,
+                      decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          color: gold,
+                          boxShadow: [
+                            BoxShadow(
+                                color: gold.withOpacity(0.6), blurRadius: 8)
                           ]),
                     ),
-        ),
-        const AdBannerWidget(),
+                    // Alt (güney)
+                    Container(
+                      width: 4,
+                      height: 80,
+                      decoration: BoxDecoration(
+                        gradient: LinearGradient(
+                            colors: [
+                              Colors.red.withOpacity(0.6),
+                              Colors.red.withOpacity(0.2)
+                            ],
+                            begin: Alignment.topCenter,
+                            end: Alignment.bottomCenter),
+                        borderRadius: const BorderRadius.vertical(
+                            bottom: Radius.circular(2)),
+                      ),
+                    ),
+                  ]),
+                ),
+
+                // Kabe simgesi (ibrenin ucunda)
+                Transform.translate(
+                  offset: Offset(
+                    100 * math.sin(needleAngle),
+                    -100 * math.cos(needleAngle),
+                  ),
+                  child: Container(
+                    width: 32,
+                    height: 32,
+                    decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        color: aligned ? gold : gold.withOpacity(0.85),
+                        boxShadow: [
+                          BoxShadow(
+                              color: gold.withOpacity(0.6), blurRadius: 10)
+                        ]),
+                    child: const Center(
+                        child: Text('🕋', style: TextStyle(fontSize: 16))),
+                  ),
+                ),
+
+                // Merkez nokta
+                Container(
+                  width: 10,
+                  height: 10,
+                  decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      color: isDark ? Colors.white : Colors.black),
+                ),
+              ]),
+            ),
+          ),
+
+          const SizedBox(height: 24),
+
+          // ── Hizalanma badge ──
+          AnimatedContainer(
+            duration: const Duration(milliseconds: 400),
+            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+            decoration: BoxDecoration(
+              color: aligned
+                  ? Colors.green.withOpacity(0.15)
+                  : gold.withOpacity(0.08),
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(
+                  color: aligned
+                      ? Colors.green.withOpacity(0.5)
+                      : gold.withOpacity(0.2)),
+            ),
+            child: Row(mainAxisSize: MainAxisSize.min, children: [
+              Icon(aligned ? Icons.check_circle : Icons.explore,
+                  color: aligned ? Colors.green : gold, size: 18),
+              const SizedBox(width: 8),
+              Text(aligned ? '🕋 Kıbleye Dönüktünüz!' : 'Cihazı döndürün',
+                  style: TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w700,
+                      color: aligned ? Colors.green : gold)),
+            ]),
+          ),
+
+          const SizedBox(height: 20),
+
+          // ── Açı bilgileri ──
+          Row(children: [
+            Expanded(
+                child: _infoTile(
+              icon: Icons.navigation,
+              label: L.qiblaDir,
+              value: '${_qiblaAngle!.toStringAsFixed(1)}°',
+              gold: gold,
+              isDark: isDark,
+            )),
+            const SizedBox(width: 12),
+            Expanded(
+                child: _infoTile(
+              icon: Icons.screen_rotation,
+              label: L.deviceHeading,
+              value: '${_heading.toStringAsFixed(1)}°',
+              gold: gold,
+              isDark: isDark,
+            )),
+          ]),
+
+          const SizedBox(height: 12),
+
+          // ── Kalibrasyon notu ──
+          Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+                color: isDark ? const Color(0xFF161B22) : Colors.white,
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(
+                    color: isDark
+                        ? Colors.white.withOpacity(0.06)
+                        : Colors.black.withOpacity(0.06))),
+            child: Row(children: [
+              Icon(Icons.info_outline, size: 14, color: gold),
+              const SizedBox(width: 8),
+              Expanded(
+                  child: Text(L.calibrate,
+                      style: TextStyle(
+                          fontSize: 11,
+                          color: isDark ? Colors.white54 : Colors.black54))),
+            ]),
+          ),
+        ]),
+      ),
+    );
+  }
+
+  List<Widget> _compassLabels(bool isDark) {
+    const labels = ['K', 'D', 'G', 'B'];
+    const angles = [0.0, math.pi / 2, math.pi, -math.pi / 2];
+    const colors = [Colors.red, null, null, null];
+    return List.generate(4, (i) {
+      final x = 115 * math.sin(angles[i]);
+      final y = -115 * math.cos(angles[i]);
+      return Transform.translate(
+        offset: Offset(x, y),
+        child: Text(labels[i],
+            style: TextStyle(
+                fontSize: 13,
+                fontWeight: FontWeight.w800,
+                color:
+                    colors[i] ?? (isDark ? Colors.white38 : Colors.black38))),
+      );
+    });
+  }
+
+  Widget _infoTile({
+    required IconData icon,
+    required String label,
+    required String value,
+    required Color gold,
+    required bool isDark,
+  }) {
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: isDark ? const Color(0xFF161B22) : Colors.white,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(
+            color: isDark
+                ? Colors.white.withOpacity(0.06)
+                : Colors.black.withOpacity(0.06)),
+      ),
+      child: Column(children: [
+        Icon(icon, color: gold, size: 20),
+        const SizedBox(height: 6),
+        Text(label,
+            style: TextStyle(
+                fontSize: 10, color: isDark ? Colors.white38 : Colors.black38)),
+        const SizedBox(height: 4),
+        Text(value,
+            style: TextStyle(
+                fontSize: 22, fontWeight: FontWeight.w900, color: gold)),
       ]),
     );
   }
+}
+
+// ─────────────────────────────────────────────
+//  Pusula halka çizici
+// ─────────────────────────────────────────────
+class _CompassRingPainter extends CustomPainter {
+  final double heading;
+  final Color gold;
+  final bool isDark;
+  _CompassRingPainter(
+      {required this.heading, required this.gold, required this.isDark});
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final center = Offset(size.width / 2, size.height / 2);
+    final radius = size.width / 2 - 4;
+    final paint = Paint()
+      ..color = gold.withOpacity(0.15)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 1.5;
+    canvas.drawCircle(center, radius, paint);
+
+    final tickPaint = Paint()
+      ..strokeCap = StrokeCap.round
+      ..strokeWidth = 1.5;
+
+    for (int deg = 0; deg < 360; deg += 5) {
+      final rad = (deg - heading) * math.pi / 180;
+      final isMain = deg % 90 == 0;
+      final isMed = deg % 45 == 0;
+      final tickLen = isMain
+          ? 14.0
+          : isMed
+              ? 10.0
+              : 6.0;
+      tickPaint.color = isMain ? gold.withOpacity(0.8) : gold.withOpacity(0.3);
+      final outer = Offset(center.dx + radius * math.sin(rad),
+          center.dy - radius * math.cos(rad));
+      final inner = Offset(center.dx + (radius - tickLen) * math.sin(rad),
+          center.dy - (radius - tickLen) * math.cos(rad));
+      canvas.drawLine(outer, inner, tickPaint);
+    }
+  }
+
+  @override
+  bool shouldRepaint(_CompassRingPainter old) =>
+      old.heading != heading || old.gold != gold;
 }
 
 // ─────────────────────────────────────────────
