@@ -33,6 +33,9 @@ class NotificationService {
   static const String _channelId = 'prayer_times_channel';
   static const String _channelName = 'Namaz Vakitleri';
   static const String _channelDesc = 'Namaz vakti bildirimleri ve ezan sesi';
+  static const String _reminderCh = 'prayer_reminder_channel';
+  static const String _reminderChName = 'Namaz Hatırlatıcı';
+  static const String _silentCh = 'prayer_silent_channel';
 
   Future<void> initialize() async {
     tz.initializeTimeZones();
@@ -47,11 +50,12 @@ class NotificationService {
       const InitializationSettings(android: androidSettings, iOS: iosSettings),
       onDidReceiveNotificationResponse: (_) {},
     );
-    await _createChannel();
+    await _createAdhanChannel();
     await _createSilentChannel();
+    await _createReminderChannel();
   }
 
-  Future<void> _createChannel() async {
+  Future<void> _createAdhanChannel() async {
     const channel = AndroidNotificationChannel(
       _channelId,
       _channelName,
@@ -61,36 +65,51 @@ class NotificationService {
       sound: RawResourceAndroidNotificationSound('adhan'),
       enableVibration: true,
     );
-    final androidImpl =
-        flutterLocalNotificationsPlugin.resolvePlatformSpecificImplementation<
-            AndroidFlutterLocalNotificationsPlugin>();
-    await androidImpl?.createNotificationChannel(channel);
+    await flutterLocalNotificationsPlugin
+        .resolvePlatformSpecificImplementation<
+            AndroidFlutterLocalNotificationsPlugin>()
+        ?.createNotificationChannel(channel);
   }
 
   Future<void> _createSilentChannel() async {
     const channel = AndroidNotificationChannel(
-      'prayer_silent_channel',
+      _silentCh,
       'Namaz Vakitleri (Sessiz)',
       description: 'Ezan sesi olmadan namaz bildirimleri',
       importance: Importance.max,
       playSound: false,
       enableVibration: true,
     );
-    final androidImpl =
-        flutterLocalNotificationsPlugin.resolvePlatformSpecificImplementation<
-            AndroidFlutterLocalNotificationsPlugin>();
-    await androidImpl?.createNotificationChannel(channel);
+    await flutterLocalNotificationsPlugin
+        .resolvePlatformSpecificImplementation<
+            AndroidFlutterLocalNotificationsPlugin>()
+        ?.createNotificationChannel(channel);
+  }
+
+  Future<void> _createReminderChannel() async {
+    const channel = AndroidNotificationChannel(
+      _reminderCh,
+      _reminderChName,
+      description: '10 dakika önce hatırlatma',
+      importance: Importance.high,
+      playSound: true,
+      enableVibration: true,
+    );
+    await flutterLocalNotificationsPlugin
+        .resolvePlatformSpecificImplementation<
+            AndroidFlutterLocalNotificationsPlugin>()
+        ?.createNotificationChannel(channel);
   }
 
   Future<void> requestPermissions() async {
-    final iosImpl =
-        flutterLocalNotificationsPlugin.resolvePlatformSpecificImplementation<
-            IOSFlutterLocalNotificationsPlugin>();
-    await iosImpl?.requestPermissions(alert: true, badge: true, sound: true);
-    final androidImpl =
-        flutterLocalNotificationsPlugin.resolvePlatformSpecificImplementation<
-            AndroidFlutterLocalNotificationsPlugin>();
-    await androidImpl?.requestNotificationsPermission();
+    await flutterLocalNotificationsPlugin
+        .resolvePlatformSpecificImplementation<
+            IOSFlutterLocalNotificationsPlugin>()
+        ?.requestPermissions(alert: true, badge: true, sound: true);
+    await flutterLocalNotificationsPlugin
+        .resolvePlatformSpecificImplementation<
+            AndroidFlutterLocalNotificationsPlugin>()
+        ?.requestNotificationsPermission();
   }
 
   Future<void> schedulePrayerNotifications({
@@ -98,14 +117,15 @@ class NotificationService {
     required String cityName,
     required bool adhanEnabled,
     required bool notificationsEnabled,
+    bool reminderEnabled = true,
   }) async {
-    if (!notificationsEnabled) {
-      await cancelAll();
-      return;
-    }
     await cancelAll();
+    if (!notificationsEnabled) return;
+
     final now = DateTime.now();
-    int id = 100;
+    int adhanId = 100;
+    int remindId = 200;
+
     for (final prayer in kMainPrayerKeys) {
       final t = times[prayer];
       if (t == null) continue;
@@ -113,13 +133,13 @@ class NotificationService {
       if (parts.length < 2) continue;
       final h = int.tryParse(parts[0]) ?? 0;
       final m = int.tryParse(parts[1]) ?? 0;
+
       var dt = DateTime(now.year, now.month, now.day, h, m);
       if (dt.isBefore(now)) dt = dt.add(const Duration(days: 1));
       final tzDt = tz.TZDateTime.from(dt, tz.local);
 
-      final channelId = adhanEnabled ? _channelId : 'prayer_silent_channel';
-      final androidDetails = AndroidNotificationDetails(
-        channelId,
+      final adhanDetails = AndroidNotificationDetails(
+        adhanEnabled ? _channelId : _silentCh,
         adhanEnabled ? _channelName : 'Namaz Vakitleri (Sessiz)',
         channelDescription: _channelDesc,
         importance: Importance.max,
@@ -139,33 +159,72 @@ class NotificationService {
         fullScreenIntent: true,
         category: AndroidNotificationCategory.alarm,
       );
-      const iosDetails = DarwinNotificationDetails(
+      const iosAdhan = DarwinNotificationDetails(
         presentAlert: true,
         presentBadge: true,
         presentSound: true,
         sound: 'adhan.aiff',
         interruptionLevel: InterruptionLevel.timeSensitive,
       );
+
       try {
         await flutterLocalNotificationsPlugin.zonedSchedule(
-          id++,
+          adhanId++,
           _title(prayer),
           _msg(prayer),
           tzDt,
-          NotificationDetails(android: androidDetails, iOS: iosDetails),
+          NotificationDetails(android: adhanDetails, iOS: iosAdhan),
           androidScheduleMode: AndroidScheduleMode.exactAllowWhileIdle,
           matchDateTimeComponents: DateTimeComponents.time,
           uiLocalNotificationDateInterpretation:
               UILocalNotificationDateInterpretation.absoluteTime,
         );
       } catch (_) {}
+
+      if (reminderEnabled) {
+        var reminderDt = dt.subtract(const Duration(minutes: 10));
+        if (reminderDt.isBefore(now))
+          reminderDt = reminderDt.add(const Duration(days: 1));
+        final tzReminder = tz.TZDateTime.from(reminderDt, tz.local);
+
+        final reminderDetails = AndroidNotificationDetails(
+          _reminderCh,
+          _reminderChName,
+          channelDescription: '10 dakika önce hatırlatma',
+          importance: Importance.high,
+          priority: Priority.high,
+          enableVibration: true,
+          icon: '@mipmap/ic_launcher',
+          color: const Color(0xFFC9A84C),
+        );
+        const iosReminder = DarwinNotificationDetails(
+          presentAlert: true,
+          presentBadge: false,
+          presentSound: true,
+          interruptionLevel: InterruptionLevel.active,
+        );
+        try {
+          await flutterLocalNotificationsPlugin.zonedSchedule(
+            remindId++,
+            '⏰ ${_prayerLocal(prayer)} – 10 dakika kaldı',
+            '${_prayerLocal(prayer)} namazı için hazırlanın. Vakit: ${times[prayer]}',
+            tzReminder,
+            NotificationDetails(android: reminderDetails, iOS: iosReminder),
+            androidScheduleMode: AndroidScheduleMode.exactAllowWhileIdle,
+            matchDateTimeComponents: DateTimeComponents.time,
+            uiLocalNotificationDateInterpretation:
+                UILocalNotificationDateInterpretation.absoluteTime,
+          );
+        } catch (_) {}
+      }
     }
   }
 
   Future<void> cancelAll() async {
-    for (int i = 100; i < 110; i++) {
+    for (int i = 100; i < 110; i++)
       await flutterLocalNotificationsPlugin.cancel(i);
-    }
+    for (int i = 200; i < 210; i++)
+      await flutterLocalNotificationsPlugin.cancel(i);
   }
 
   String _title(String p) {
@@ -192,7 +251,7 @@ class NotificationService {
 }
 
 // ─────────────────────────────────────────────
-//  HOME WIDGET SERVİSİ
+//  HOME WIDGET SERVİSİ — Profesyonel
 // ─────────────────────────────────────────────
 class HomeWidgetService {
   static const String _iOSPrayer = 'PrayerTimesWidget';
@@ -203,6 +262,10 @@ class HomeWidgetService {
     required String nextTime,
     required String cityName,
     required Map<String, String> allTimes,
+    String? countdownStr,
+    String? hijriDate,
+    String? temperature,
+    String? weatherDesc,
   }) async {
     try {
       await HomeWidget.saveWidgetData<String>('next_prayer', nextPrayer);
@@ -218,6 +281,19 @@ class HomeWidgetService {
           'maghrib', allTimes['Maghrib'] ?? '--:--');
       await HomeWidget.saveWidgetData<String>(
           'isha', allTimes['Isha'] ?? '--:--');
+      await HomeWidget.saveWidgetData<String>(
+          'imsak', allTimes['Imsak'] ?? '--:--');
+      await HomeWidget.saveWidgetData<String>(
+          'sunrise', allTimes['Sunrise'] ?? '--:--');
+      await HomeWidget.saveWidgetData<String>('countdown', countdownStr ?? '');
+      await HomeWidget.saveWidgetData<String>('hijri_date', hijriDate ?? '');
+      await HomeWidget.saveWidgetData<String>('temperature', temperature ?? '');
+      await HomeWidget.saveWidgetData<String>(
+          'weather_desc', weatherDesc ?? '');
+      await HomeWidget.saveWidgetData<String>(
+          'all_times_json', jsonEncode(allTimes));
+      await HomeWidget.saveWidgetData<int>(
+          'last_update', DateTime.now().millisecondsSinceEpoch);
       await HomeWidget.updateWidget(
         iOSName: _iOSPrayer,
         androidName: _androidPrayer,
@@ -262,7 +338,6 @@ class BookmarkService {
   Future<void> add(Map<String, dynamic> bookmark) async {
     final p = await SharedPreferences.getInstance();
     final list = await getAll();
-    // Duplicate check
     final exists = list.any((b) =>
         b['surahNum'] == bookmark['surahNum'] &&
         b['ayahNum'] == bookmark['ayahNum']);
@@ -640,62 +715,74 @@ const Map<String, Map<String, String>> kReciters = {
   'ar.alafasy': {
     'name': 'Mişari Raşid el-Afasî',
     'style': 'Murattal',
-    'audioId': 'Alafasy_128kbps'
+    'audioId': 'Alafasy_128kbps',
+    'everyayah': 'Alafasy_128kbps',
   },
   'ar.maher': {
     'name': 'Maher el-Muaykılî',
     'style': 'Murattal',
-    'audioId': 'MaherAlMuaiqly128kbps'
+    'audioId': 'MaherAlMuaiqly128kbps',
+    'everyayah': 'MaherAlMuaiqly128kbps',
   },
   'ar.minshawi': {
     'name': 'Minsavî (Murattal)',
     'style': 'Murattal',
-    'audioId': 'Minshawy_Murattal_128kbps'
-  },
-  'ar.minshawiMujawwad': {
-    'name': 'Minsavî (Mücevved)',
-    'style': 'Mücevved',
-    'audioId': 'Minshawy_Mujawwad_128kbps'
+    'audioId': 'Minshawy_Murattal_128kbps',
+    'everyayah': 'Minshawy_Murattal_128kbps',
   },
   'ar.husary': {
-    'name': 'Husarî',
-    'style': 'Mücevved',
-    'audioId': 'Husary_128kbps'
+    'name': 'Husarî (Murattal)',
+    'style': 'Murattal',
+    'audioId': 'Husary_128kbps',
+    'everyayah': 'Husary_128kbps',
   },
   'ar.husaryMujawwad': {
     'name': 'Husarî (Mücevved)',
     'style': 'Mücevved',
-    'audioId': 'Husary_Mujawwad_128kbps'
+    'audioId': 'Husary_Mujawwad_128kbps',
+    'everyayah': 'Husary_128kbps',
   },
   'ar.abdulbasit': {
     'name': 'Abdülbasit Abdüssamed',
     'style': 'Mücevved',
-    'audioId': 'AbdulSamad_128kbps'
+    'audioId': 'AbdulSamad_128kbps',
+    'everyayah': 'AbdulSamad_128kbps',
   },
   'ar.ghamadi': {
     'name': 'Saad el-Gamedî',
     'style': 'Murattal',
-    'audioId': 'Ghamadi_40kbps'
+    'audioId': 'Ghamadi_40kbps',
+    'everyayah': 'Ghamadi_40kbps',
   },
   'ar.sudais': {
     'name': 'Abdurrahman es-Sudeys',
     'style': 'Murattal',
-    'audioId': 'Sudais_128kbps'
+    'audioId': 'Sudais_128kbps',
+    'everyayah': 'Sudais_128kbps',
   },
   'ar.shuraym': {
     'name': 'Suud eş-Şüreym',
     'style': 'Murattal',
-    'audioId': 'Shuraym_128kbps'
+    'audioId': 'Shuraym_128kbps',
+    'everyayah': 'Shuraym_128kbps',
   },
   'ar.basfar': {
     'name': 'Abdullah Basfar',
     'style': 'Murattal',
-    'audioId': 'Abdullah_Basfar_128kbps'
+    'audioId': 'Abdullah_Basfar_128kbps',
+    'everyayah': 'Abdullah_Basfar_128kbps',
   },
   'ar.shatri': {
     'name': 'Ebu Bekr eş-Şatrî',
     'style': 'Murattal',
-    'audioId': 'abu_bakr_ash-shaatree_128kbps'
+    'audioId': 'abu_bakr_ash-shaatree_128kbps',
+    'everyayah': 'abu_bakr_ash-shaatree_128kbps',
+  },
+  'ar.minshawiMujawwad': {
+    'name': 'Minsavî (Mücevved)',
+    'style': 'Mücevved',
+    'audioId': 'Minshawy_Mujawwad_128kbps',
+    'everyayah': 'Minshawy_Murattal_128kbps',
   },
 };
 
@@ -1457,7 +1544,7 @@ String _prayerLocal(String key) {
 }
 
 String ayahAudioUrl(String reciterKey, int surahNum, int ayahNum) {
-  final audioId = kReciters[reciterKey]?['audioId'] ?? 'Alafasy_128kbps';
+  final audioId = kReciters[reciterKey]?['everyayah'] ?? 'Alafasy_128kbps';
   final s = surahNum.toString().padLeft(3, '0');
   final a = ayahNum.toString().padLeft(3, '0');
   return 'https://everyayah.com/data/$audioId/$s$a.mp3';
@@ -1477,11 +1564,12 @@ class PrayerTimesService {
   factory PrayerTimesService() => _i;
   PrayerTimesService._();
 
-  Future<Map<String, dynamic>> fetchByCoords(
-      {required double lat,
-      required double lon,
-      required int method,
-      DateTime? date}) async {
+  Future<Map<String, dynamic>> fetchByCoords({
+    required double lat,
+    required double lon,
+    required int method,
+    DateTime? date,
+  }) async {
     final d = date ?? DateTime.now();
     final ds =
         '${d.day.toString().padLeft(2, '0')}-${d.month.toString().padLeft(2, '0')}-${d.year}';
@@ -1495,11 +1583,12 @@ class PrayerTimesService {
     return data['data'] as Map<String, dynamic>;
   }
 
-  Future<Map<String, dynamic>> fetchByCity(
-      {required String city,
-      required String country,
-      required int method,
-      DateTime? date}) async {
+  Future<Map<String, dynamic>> fetchByCity({
+    required String city,
+    required String country,
+    required int method,
+    DateTime? date,
+  }) async {
     final d = date ?? DateTime.now();
     final ds =
         '${d.day.toString().padLeft(2, '0')}-${d.month.toString().padLeft(2, '0')}-${d.year}';
@@ -1587,9 +1676,9 @@ class PrayerTrackerService {
     final now = DateTime.now();
     for (int i = 0; i < 365; i++) {
       final dk = _dk(now.subtract(Duration(days: i)));
-      if (kMainPrayerKeys.every((pr) => p.getBool(_pk(dk, pr)) ?? false)) {
+      if (kMainPrayerKeys.every((pr) => p.getBool(_pk(dk, pr)) ?? false))
         streak++;
-      } else
+      else
         break;
     }
     await p.setInt('prayer_streak', streak);
@@ -1634,7 +1723,7 @@ class PrayerTrackerService {
 }
 
 // ─────────────────────────────────────────────
-//  GLOBAL AUDIO PLAYER (Ezan)
+//  EZAN OYNATICI — Çoklu URL, gerçek zamanlı
 // ─────────────────────────────────────────────
 class AdhanPlayer {
   static final AdhanPlayer _i = AdhanPlayer._();
@@ -1644,15 +1733,29 @@ class AdhanPlayer {
   final AudioPlayer _player = AudioPlayer();
   bool _isPlaying = false;
 
-  // Ezan seslerini çal (bildirim geldiğinde de uygulama içinde çalabilir)
-  Future<void> playAdhan(String prayerName) async {
+  // Çalışan ezan URL'leri — sırayla denenir
+  static const List<String> _adhanUrls = [
+    'https://www.islamcan.com/audio/adhan/azan1.mp3',
+    'https://audio.islamicfinder.org/audio/adhan/adhan_fajr.mp3',
+    'https://cdn.azan.ir/sounds/azan1.mp3',
+  ];
+
+  Future<void> playAdhan() async {
     try {
       if (_isPlaying) await stop();
       _isPlaying = true;
-      // Ezan ses dosyaları assets veya remote URL
-      // Varsayılan olarak Mişari Raşid versiyonu
-      await _player.setUrl('https://www.islamcan.com/audio/adhan/azan1.mp3');
-      await _player.play();
+      bool played = false;
+      for (final url in _adhanUrls) {
+        try {
+          await _player.setUrl(url).timeout(const Duration(seconds: 8));
+          await _player.play();
+          played = true;
+          break;
+        } catch (_) {
+          continue;
+        }
+      }
+      if (!played) _isPlaying = false;
       _player.processingStateStream.listen((s) {
         if (s == ProcessingState.completed) _isPlaying = false;
       });
@@ -1669,6 +1772,7 @@ class AdhanPlayer {
   }
 
   bool get isPlaying => _isPlaying;
+  AudioPlayer get player => _player;
   void dispose() {
     _player.dispose();
   }
@@ -1930,6 +2034,7 @@ class _HomeScreenState extends State<HomeScreen> {
   bool _loadingPrayer = true;
   Timer? _timer;
   Map<String, bool> _todayStatus = {};
+  String _hijriDate = '';
 
   int get _verseIdx {
     final now = DateTime.now();
@@ -1999,19 +2104,35 @@ class _HomeScreenState extends State<HomeScreen> {
       }
 
       final timings = PrayerTimesService().extractTimings(data);
+      final nextPrayer = PrayerTimesService().getNextPrayer(timings);
+      final dur = PrayerTimesService().timeUntilNext(timings);
+
+      // Hicri tarih
+      try {
+        final hijri = data['date']?['hijri'];
+        if (hijri != null) {
+          _hijriDate =
+              '${hijri['day']} ${hijri['month']?['en']} ${hijri['year']}';
+        }
+      } catch (_) {}
+
       if (mounted)
         setState(() {
           _timings = timings;
-          _nextPrayer = PrayerTimesService().getNextPrayer(timings);
-          _timeUntilNext = PrayerTimesService().timeUntilNext(timings);
+          _nextPrayer = nextPrayer;
+          _timeUntilNext = dur;
           _loadingPrayer = false;
         });
-      if (_nextPrayer != null) {
+
+      if (nextPrayer != null) {
         await HomeWidgetService.updatePrayerWidget(
-            nextPrayer: _prayerLocal(_nextPrayer!),
-            nextTime: timings[_nextPrayer] ?? '--:--',
-            cityName: _cityName,
-            allTimes: timings);
+          nextPrayer: _prayerLocal(nextPrayer),
+          nextTime: timings[nextPrayer] ?? '--:--',
+          cityName: _cityName,
+          allTimes: timings,
+          countdownStr: dur != null ? _formatDuration(dur) : '',
+          hijriDate: _hijriDate,
+        );
       }
     } catch (_) {
       if (mounted) setState(() => _loadingPrayer = false);
@@ -2246,13 +2367,14 @@ class _HomeScreenState extends State<HomeScreen> {
                     padding:
                         const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
                     decoration: BoxDecoration(
-                        color: isNext
-                            ? pColor.withOpacity(0.15)
-                            : Colors.transparent,
-                        borderRadius: BorderRadius.circular(6),
-                        border: isNext
-                            ? Border.all(color: pColor.withOpacity(0.4))
-                            : null),
+                      color: isNext
+                          ? pColor.withOpacity(0.15)
+                          : Colors.transparent,
+                      borderRadius: BorderRadius.circular(6),
+                      border: isNext
+                          ? Border.all(color: pColor.withOpacity(0.4))
+                          : null,
+                    ),
                     child: Text(_timings[key] ?? '--:--',
                         style: TextStyle(
                             fontSize: 11,
@@ -2291,14 +2413,13 @@ class _HomeScreenState extends State<HomeScreen> {
                   fontSize: 13, fontWeight: FontWeight.w700, color: gold)),
           const Spacer(),
           Container(
-            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-            decoration: BoxDecoration(
-                color: gold.withOpacity(0.1),
-                borderRadius: BorderRadius.circular(6)),
-            child: Text(verse['ref'] ?? '',
-                style: TextStyle(
-                    fontSize: 10, color: gold, fontWeight: FontWeight.w600)),
-          ),
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+              decoration: BoxDecoration(
+                  color: gold.withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(6)),
+              child: Text(verse['ref'] ?? '',
+                  style: TextStyle(
+                      fontSize: 10, color: gold, fontWeight: FontWeight.w600))),
         ]),
         const SizedBox(height: 12),
         Text(verse['ar'] ?? '',
@@ -2460,21 +2581,20 @@ class _HomeScreenState extends State<HomeScreen> {
             },
             child: Column(children: [
               AnimatedContainer(
-                duration: const Duration(milliseconds: 300),
-                curve: Curves.elasticOut,
-                width: 40,
-                height: 40,
-                decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    color: isDone ? pColor : pColor.withOpacity(0.1),
-                    border: Border.all(
-                        color: pColor.withOpacity(isDone ? 1 : 0.3),
-                        width: 1.5)),
-                child: isDone
-                    ? const Icon(Icons.check, color: Colors.white, size: 20)
-                    : Icon(kPrayerIcons[key] ?? Icons.circle_outlined,
-                        color: pColor.withOpacity(0.5), size: 18),
-              ),
+                  duration: const Duration(milliseconds: 300),
+                  curve: Curves.elasticOut,
+                  width: 40,
+                  height: 40,
+                  decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      color: isDone ? pColor : pColor.withOpacity(0.1),
+                      border: Border.all(
+                          color: pColor.withOpacity(isDone ? 1 : 0.3),
+                          width: 1.5)),
+                  child: isDone
+                      ? const Icon(Icons.check, color: Colors.white, size: 20)
+                      : Icon(kPrayerIcons[key] ?? Icons.circle_outlined,
+                          color: pColor.withOpacity(0.5), size: 18)),
               const SizedBox(height: 4),
               Text(_prayerLocal(key),
                   style: TextStyle(
@@ -2490,21 +2610,20 @@ class _HomeScreenState extends State<HomeScreen> {
         if (done == 5) ...[
           const SizedBox(height: 10),
           Container(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-            decoration: BoxDecoration(
-                color: Colors.green.withOpacity(0.15),
-                borderRadius: BorderRadius.circular(8)),
-            child: const Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Text('🎉 ', style: TextStyle(fontSize: 14)),
-                  Text('Tüm namazlar kılındı! MaşaAllah!',
-                      style: TextStyle(
-                          color: Colors.green,
-                          fontSize: 12,
-                          fontWeight: FontWeight.w700)),
-                ]),
-          ),
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              decoration: BoxDecoration(
+                  color: Colors.green.withOpacity(0.15),
+                  borderRadius: BorderRadius.circular(8)),
+              child: const Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Text('🎉 ', style: TextStyle(fontSize: 14)),
+                    Text('Tüm namazlar kılındı! MaşaAllah!',
+                        style: TextStyle(
+                            color: Colors.green,
+                            fontSize: 12,
+                            fontWeight: FontWeight.w700))
+                  ])),
         ],
       ]),
     );
@@ -2525,28 +2644,26 @@ class _HomeScreenState extends State<HomeScreen> {
           const Text('🕌 ', style: TextStyle(fontSize: 16)),
           Text(L.islamicDays,
               style: TextStyle(
-                  fontSize: 13, fontWeight: FontWeight.w700, color: gold)),
+                  fontSize: 13, fontWeight: FontWeight.w700, color: gold))
         ]),
         const SizedBox(height: 12),
         ...kIslamicDays.take(5).map((day) => Padding(
-              padding: const EdgeInsets.symmetric(vertical: 4),
-              child: Row(children: [
-                Text(day['icon'] as String,
-                    style: const TextStyle(fontSize: 18)),
-                const SizedBox(width: 10),
-                Expanded(
-                    child: Text(
-                        L.lang == AppLang.en
-                            ? day['name_en'] as String
-                            : day['name_tr'] as String,
-                        style: const TextStyle(
-                            fontSize: 13, fontWeight: FontWeight.w500))),
-                Text('${day['day']}/${day['month']}',
-                    style: TextStyle(
-                        fontSize: 11,
-                        color: isDark ? Colors.white38 : Colors.black38)),
-              ]),
-            )),
+            padding: const EdgeInsets.symmetric(vertical: 4),
+            child: Row(children: [
+              Text(day['icon'] as String, style: const TextStyle(fontSize: 18)),
+              const SizedBox(width: 10),
+              Expanded(
+                  child: Text(
+                      L.lang == AppLang.en
+                          ? day['name_en'] as String
+                          : day['name_tr'] as String,
+                      style: const TextStyle(
+                          fontSize: 13, fontWeight: FontWeight.w500))),
+              Text('${day['day']}/${day['month']}',
+                  style: TextStyle(
+                      fontSize: 11,
+                      color: isDark ? Colors.white38 : Colors.black38)),
+            ]))),
       ]),
     );
   }
@@ -2644,19 +2761,18 @@ class _SurahCard extends StatelessWidget {
           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
           child: Row(children: [
             Container(
-              width: 40,
-              height: 40,
-              decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  color: gold.withOpacity(0.12),
-                  border: Border.all(color: gold.withOpacity(0.3))),
-              child: Center(
-                  child: Text('${surah.number}',
-                      style: TextStyle(
-                          fontSize: 12,
-                          fontWeight: FontWeight.w700,
-                          color: gold))),
-            ),
+                width: 40,
+                height: 40,
+                decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: gold.withOpacity(0.12),
+                    border: Border.all(color: gold.withOpacity(0.3))),
+                child: Center(
+                    child: Text('${surah.number}',
+                        style: TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w700,
+                            color: gold)))),
             const SizedBox(width: 12),
             Expanded(
                 child: Column(
@@ -2668,19 +2784,20 @@ class _SurahCard extends StatelessWidget {
                   const SizedBox(height: 2),
                   Row(children: [
                     Container(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 6, vertical: 1),
-                      decoration: BoxDecoration(
-                          color: (surah.isMeccan ? Colors.orange : Colors.green)
-                              .withOpacity(0.15),
-                          borderRadius: BorderRadius.circular(4)),
-                      child: Text(surah.isMeccan ? L.meccan : L.medinan,
-                          style: TextStyle(
-                              fontSize: 9,
-                              color:
-                                  surah.isMeccan ? Colors.orange : Colors.green,
-                              fontWeight: FontWeight.w600)),
-                    ),
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 6, vertical: 1),
+                        decoration: BoxDecoration(
+                            color:
+                                (surah.isMeccan ? Colors.orange : Colors.green)
+                                    .withOpacity(0.15),
+                            borderRadius: BorderRadius.circular(4)),
+                        child: Text(surah.isMeccan ? L.meccan : L.medinan,
+                            style: TextStyle(
+                                fontSize: 9,
+                                color: surah.isMeccan
+                                    ? Colors.orange
+                                    : Colors.green,
+                                fontWeight: FontWeight.w600))),
                     const SizedBox(width: 6),
                     Text('${surah.ayahCount} ${L.verses}',
                         style: TextStyle(
@@ -2813,28 +2930,25 @@ class _QuranScreenState extends State<QuranScreen>
             Tab(text: L.juzList),
             Tab(text: L.mushaf),
             Tab(text: L.audio),
-            Tab(text: L.favorites),
+            Tab(text: L.favorites)
           ],
         ),
       ),
       body: Column(children: [
         Expanded(
-            child: TabBarView(
-          controller: _tab,
-          children: [
-            _buildSurahListTab(),
-            JuzListTab(
-                surahs: _surahs,
-                reciter: widget.reciter,
-                translation: widget.translation),
-            MushafTab(reciter: widget.reciter),
-            AudioTab(surahs: _surahs, reciter: widget.reciter),
-            BookmarksTab(
-                surahs: _surahs,
-                reciter: widget.reciter,
-                translation: widget.translation),
-          ],
-        )),
+            child: TabBarView(controller: _tab, children: [
+          _buildSurahListTab(),
+          JuzListTab(
+              surahs: _surahs,
+              reciter: widget.reciter,
+              translation: widget.translation),
+          MushafTab(reciter: widget.reciter),
+          AudioTab(surahs: _surahs, reciter: widget.reciter),
+          BookmarksTab(
+              surahs: _surahs,
+              reciter: widget.reciter,
+              translation: widget.translation),
+        ])),
         const AdBannerWidget(),
       ]),
     );
@@ -2846,65 +2960,62 @@ class _QuranScreenState extends State<QuranScreen>
     final gold = Theme.of(context).colorScheme.primary;
     return Column(children: [
       Padding(
-        padding: const EdgeInsets.all(12),
-        child: TextField(
-          controller: _search,
-          decoration: InputDecoration(
-            hintText: L.searchSurah,
-            prefixIcon: const Icon(Icons.search, size: 20),
-            filled: true,
-            contentPadding:
-                const EdgeInsets.symmetric(vertical: 10, horizontal: 14),
-            border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(12),
-                borderSide: BorderSide.none),
-          ),
-        ),
-      ),
+          padding: const EdgeInsets.all(12),
+          child: TextField(
+              controller: _search,
+              decoration: InputDecoration(
+                  hintText: L.searchSurah,
+                  prefixIcon: const Icon(Icons.search, size: 20),
+                  filled: true,
+                  contentPadding:
+                      const EdgeInsets.symmetric(vertical: 10, horizontal: 14),
+                  border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                      borderSide: BorderSide.none)))),
       if (_lastSurah != null && _lastAyah > 0 && _surahs.isNotEmpty)
         Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-          child: InkWell(
-            onTap: () {
-              final s = _surahs.firstWhere((x) => x.number == _lastSurah!,
-                  orElse: () => _surahs.first);
-              Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                          builder: (_) => SurahDetailScreen(
-                              surah: s,
-                              reciter: widget.reciter,
-                              translation: widget.translation,
-                              scrollToAyah: _lastAyah)))
-                  .then((_) => _loadLastPos());
-            },
-            borderRadius: BorderRadius.circular(10),
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-              decoration: BoxDecoration(
-                  color: gold.withOpacity(0.1),
-                  borderRadius: BorderRadius.circular(10),
-                  border: Border.all(color: gold.withOpacity(0.3))),
-              child: Row(children: [
-                Icon(Icons.bookmark, color: gold, size: 18),
-                const SizedBox(width: 8),
-                Expanded(
-                    child: Text(
-                        '${L.continueReading} — ${_surahs.firstWhere((x) => x.number == _lastSurah!, orElse: () => _surahs.first).englishName}, ${L.verse} $_lastAyah',
-                        style: TextStyle(
-                            color: gold,
-                            fontSize: 13,
-                            fontWeight: FontWeight.w600))),
-                Icon(Icons.arrow_forward_ios, color: gold, size: 14),
-              ]),
-            ),
-          ),
-        ),
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+            child: InkWell(
+              onTap: () {
+                final s = _surahs.firstWhere((x) => x.number == _lastSurah!,
+                    orElse: () => _surahs.first);
+                Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                            builder: (_) => SurahDetailScreen(
+                                surah: s,
+                                reciter: widget.reciter,
+                                translation: widget.translation,
+                                scrollToAyah: _lastAyah)))
+                    .then((_) => _loadLastPos());
+              },
+              borderRadius: BorderRadius.circular(10),
+              child: Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                decoration: BoxDecoration(
+                    color: gold.withOpacity(0.1),
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(color: gold.withOpacity(0.3))),
+                child: Row(children: [
+                  Icon(Icons.bookmark, color: gold, size: 18),
+                  const SizedBox(width: 8),
+                  Expanded(
+                      child: Text(
+                          '${L.continueReading} — ${_surahs.firstWhere((x) => x.number == _lastSurah!, orElse: () => _surahs.first).englishName}, ${L.verse} $_lastAyah',
+                          style: TextStyle(
+                              color: gold,
+                              fontSize: 13,
+                              fontWeight: FontWeight.w600))),
+                  Icon(Icons.arrow_forward_ios, color: gold, size: 14),
+                ]),
+              ),
+            )),
       Expanded(
-        child: ListView.builder(
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-          itemCount: _filtered.length,
-          itemBuilder: (ctx, i) => _SurahCard(
+          child: ListView.builder(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+        itemCount: _filtered.length,
+        itemBuilder: (ctx, i) => _SurahCard(
             surah: _filtered[i],
             onTap: () {
               AdManager().maybeShowInterstitial(context);
@@ -2916,16 +3027,14 @@ class _QuranScreenState extends State<QuranScreen>
                               reciter: widget.reciter,
                               translation: widget.translation)))
                   .then((_) => _loadLastPos());
-            },
-          ),
-        ),
-      ),
+            }),
+      )),
     ]);
   }
 }
 
 // ─────────────────────────────────────────────
-//  SURE DETAY EKRANI (TAM)
+//  SURE DETAY EKRANI
 // ─────────────────────────────────────────────
 class SurahDetailScreen extends StatefulWidget {
   final SurahMeta surah;
@@ -3014,7 +3123,6 @@ class _SurahDetailScreenState extends State<SurahDetailScreen> {
       final arabicData = (jsonDecode(results[0].body)
           as Map<String, dynamic>)['data'] as Map<String, dynamic>;
       final arabicAyahs = arabicData['ayahs'] as List;
-
       List<dynamic> transAyahs = [];
       if (results[1].statusCode == 200) {
         final transData = (jsonDecode(results[1].body)
@@ -3026,11 +3134,10 @@ class _SurahDetailScreenState extends State<SurahDetailScreen> {
       for (int i = 0; i < arabicAyahs.length; i++) {
         final a = arabicAyahs[i] as Map<String, dynamic>;
         String trans = '';
-        if (i < transAyahs.length) {
+        if (i < transAyahs.length)
           trans =
               ((transAyahs[i] as Map<String, dynamic>)['text'] as String? ?? '')
                   .replaceAll(RegExp(r'^\d+\.\s*'), '');
-        }
         verses.add({
           'arabic': a['text'] as String? ?? '',
           'translation': trans,
@@ -3045,14 +3152,11 @@ class _SurahDetailScreenState extends State<SurahDetailScreen> {
           _verses = verses;
           _loading = false;
         });
-        // Save last position
         final p = await SharedPreferences.getInstance();
         await p.setInt('last_surah', widget.surah.number);
-        // Scroll to ayah if needed
-        if (widget.scrollToAyah > 0) {
+        if (widget.scrollToAyah > 0)
           WidgetsBinding.instance.addPostFrameCallback(
               (_) => _scrollToAyah(widget.scrollToAyah - 1));
-        }
       }
     } catch (e) {
       if (mounted)
@@ -3066,12 +3170,11 @@ class _SurahDetailScreenState extends State<SurahDetailScreen> {
   void _scrollToAyah(int idx) {
     if (idx < 0 || idx >= _verses.length) return;
     final key = _ayahKeys[idx];
-    if (key?.currentContext != null) {
+    if (key?.currentContext != null)
       Scrollable.ensureVisible(key!.currentContext!,
           duration: const Duration(milliseconds: 500),
           curve: Curves.easeInOut,
           alignment: 0.2);
-    }
   }
 
   Future<void> _playVerse(int idx) async {
@@ -3084,6 +3187,7 @@ class _SurahDetailScreenState extends State<SurahDetailScreen> {
       await _player.play();
       return;
     }
+
     setState(() {
       _playingIdx = idx;
       _isLoadingAudio = true;
@@ -3093,12 +3197,15 @@ class _SurahDetailScreenState extends State<SurahDetailScreen> {
           widget.reciter, widget.surah.number, _verses[idx]['ayahNum'] as int);
       await _player.setUrl(url);
       await _player.play();
-      // Save progress
       final p = await SharedPreferences.getInstance();
       await p.setInt('last_surah', widget.surah.number);
       await p.setInt('last_ayah', _verses[idx]['ayahNum'] as int);
-    } catch (_) {
-      if (mounted) setState(() => _isLoadingAudio = false);
+    } catch (e) {
+      if (mounted) {
+        setState(() => _isLoadingAudio = false);
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+            content: Text('Ses yüklenemedi: $e'), backgroundColor: Colors.red));
+      }
     }
   }
 
@@ -3119,14 +3226,13 @@ class _SurahDetailScreenState extends State<SurahDetailScreen> {
       });
       setState(() => _bookmarkedAyahs.add(ayahNum));
     }
-    if (mounted) {
+    if (mounted)
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-        content:
-            Text(isBookmarked ? 'Yer imi kaldırıldı' : 'Yer imine eklendi ✓'),
-        duration: const Duration(seconds: 1),
-        backgroundColor: isBookmarked ? Colors.grey : const Color(0xFFC9A84C),
-      ));
-    }
+          content:
+              Text(isBookmarked ? 'Yer imi kaldırıldı' : 'Yer imine eklendi ✓'),
+          duration: const Duration(seconds: 1),
+          backgroundColor:
+              isBookmarked ? Colors.grey : const Color(0xFFC9A84C)));
   }
 
   @override
@@ -3193,7 +3299,6 @@ class _SurahDetailScreenState extends State<SurahDetailScreen> {
           : _error.isNotEmpty
               ? _errorCenter(_error, _fetchSurah)
               : Column(children: [
-                  // Sure başlık kartı
                   Container(
                     padding: const EdgeInsets.symmetric(
                         vertical: 14, horizontal: 20),
@@ -3271,110 +3376,98 @@ class _SurahDetailScreenState extends State<SurahDetailScreen> {
                       ],
                     ]),
                   ),
-                  // Ayet listesi
                   Expanded(
-                    child: ListView.builder(
-                      controller: _scrollCtrl,
-                      padding: const EdgeInsets.fromLTRB(12, 8, 12, 80),
-                      itemCount: _verses.length,
-                      itemBuilder: (ctx, i) {
-                        final v = _verses[i];
-                        final ayahNum = v['ayahNum'] as int;
-                        final isPlaying = _playingIdx == i;
-                        final isBookmarked = _bookmarkedAyahs.contains(ayahNum);
-                        final pColor = gold;
-                        return Container(
-                          key: _ayahKeys[i],
-                          margin: const EdgeInsets.only(bottom: 8),
-                          decoration: BoxDecoration(
-                            color: isPlaying
-                                ? gold.withOpacity(0.06)
-                                : (isDark
-                                    ? const Color(0xFF161B22)
-                                    : Colors.white),
-                            borderRadius: BorderRadius.circular(16),
-                            border: Border.all(
-                                color: isPlaying
-                                    ? gold.withOpacity(0.4)
-                                    : (isDark
-                                        ? Colors.white.withOpacity(0.06)
-                                        : Colors.black.withOpacity(0.06))),
-                          ),
-                          child: Padding(
+                      child: ListView.builder(
+                    controller: _scrollCtrl,
+                    padding: const EdgeInsets.fromLTRB(12, 8, 12, 80),
+                    itemCount: _verses.length,
+                    itemBuilder: (ctx, i) {
+                      final v = _verses[i];
+                      final ayahNum = v['ayahNum'] as int;
+                      final isPlaying = _playingIdx == i;
+                      final isBookmarked = _bookmarkedAyahs.contains(ayahNum);
+                      return Container(
+                        key: _ayahKeys[i],
+                        margin: const EdgeInsets.only(bottom: 8),
+                        decoration: BoxDecoration(
+                          color: isPlaying
+                              ? gold.withOpacity(0.06)
+                              : (isDark
+                                  ? const Color(0xFF161B22)
+                                  : Colors.white),
+                          borderRadius: BorderRadius.circular(16),
+                          border: Border.all(
+                              color: isPlaying
+                                  ? gold.withOpacity(0.4)
+                                  : (isDark
+                                      ? Colors.white.withOpacity(0.06)
+                                      : Colors.black.withOpacity(0.06))),
+                        ),
+                        child: Padding(
                             padding: const EdgeInsets.all(14),
                             child: Column(
                                 crossAxisAlignment: CrossAxisAlignment.stretch,
                                 children: [
-                                  // Ayet başlık satırı
                                   Row(children: [
                                     Container(
-                                      width: 32,
-                                      height: 32,
-                                      decoration: BoxDecoration(
-                                          shape: BoxShape.circle,
-                                          border: Border.all(
-                                              color: gold.withOpacity(0.4)),
-                                          color: gold.withOpacity(0.08)),
-                                      child: Center(
-                                          child: Text('$ayahNum',
-                                              style: TextStyle(
-                                                  fontSize: 10,
-                                                  color: gold,
-                                                  fontWeight:
-                                                      FontWeight.w700))),
-                                    ),
+                                        width: 32,
+                                        height: 32,
+                                        decoration: BoxDecoration(
+                                            shape: BoxShape.circle,
+                                            border: Border.all(
+                                                color: gold.withOpacity(0.4)),
+                                            color: gold.withOpacity(0.08)),
+                                        child: Center(
+                                            child: Text('$ayahNum',
+                                                style: TextStyle(
+                                                    fontSize: 10,
+                                                    color: gold,
+                                                    fontWeight:
+                                                        FontWeight.w700)))),
                                     const Spacer(),
-                                    // Bookmark
                                     GestureDetector(
-                                      onTap: () => _toggleBookmark(i),
-                                      child: AnimatedSwitcher(
-                                        duration:
-                                            const Duration(milliseconds: 200),
-                                        child: Icon(
-                                            isBookmarked
-                                                ? Icons.bookmark
-                                                : Icons.bookmark_outline,
-                                            key: ValueKey(isBookmarked),
-                                            color: isBookmarked
-                                                ? gold
-                                                : (isDark
-                                                    ? Colors.white38
-                                                    : Colors.black38),
-                                            size: 20),
-                                      ),
-                                    ),
+                                        onTap: () => _toggleBookmark(i),
+                                        child: AnimatedSwitcher(
+                                            duration: const Duration(
+                                                milliseconds: 200),
+                                            child: Icon(
+                                                isBookmarked
+                                                    ? Icons.bookmark
+                                                    : Icons.bookmark_outline,
+                                                key: ValueKey(isBookmarked),
+                                                color: isBookmarked
+                                                    ? gold
+                                                    : (isDark
+                                                        ? Colors.white38
+                                                        : Colors.black38),
+                                                size: 20))),
                                     const SizedBox(width: 6),
-                                    // Kopyala
                                     GestureDetector(
-                                      onTap: () {
-                                        Clipboard.setData(ClipboardData(
-                                            text:
-                                                '${v['arabic']}\n${v['translation']}\n— ${widget.surah.englishName} $ayahNum'));
-                                        ScaffoldMessenger.of(context)
-                                            .showSnackBar(SnackBar(
-                                                content: Text(L.copied),
-                                                duration: const Duration(
-                                                    seconds: 1)));
-                                      },
-                                      child: Icon(Icons.copy_outlined,
-                                          color: isDark
-                                              ? Colors.white38
-                                              : Colors.black38,
-                                          size: 18),
-                                    ),
+                                        onTap: () {
+                                          Clipboard.setData(ClipboardData(
+                                              text:
+                                                  '${v['arabic']}\n${v['translation']}\n— ${widget.surah.englishName} $ayahNum'));
+                                          ScaffoldMessenger.of(context)
+                                              .showSnackBar(SnackBar(
+                                                  content: Text(L.copied),
+                                                  duration: const Duration(
+                                                      seconds: 1)));
+                                        },
+                                        child: Icon(Icons.copy_outlined,
+                                            color: isDark
+                                                ? Colors.white38
+                                                : Colors.black38,
+                                            size: 18)),
                                     const SizedBox(width: 6),
-                                    // Paylaş
                                     GestureDetector(
-                                      onTap: () => Share.share(
-                                          '${v['arabic']}\n\n${v['translation']}\n— ${widget.surah.englishName} $ayahNum'),
-                                      child: Icon(Icons.share_outlined,
-                                          color: isDark
-                                              ? Colors.white38
-                                              : Colors.black38,
-                                          size: 18),
-                                    ),
+                                        onTap: () => Share.share(
+                                            '${v['arabic']}\n\n${v['translation']}\n— ${widget.surah.englishName} $ayahNum'),
+                                        child: Icon(Icons.share_outlined,
+                                            color: isDark
+                                                ? Colors.white38
+                                                : Colors.black38,
+                                            size: 18)),
                                     const SizedBox(width: 6),
-                                    // Oynat/Durdur
                                     GestureDetector(
                                       onTap: () => _playVerse(i),
                                       child: Container(
@@ -3386,9 +3479,8 @@ class _SurahDetailScreenState extends State<SurahDetailScreen> {
                                                 ? gold
                                                 : gold.withOpacity(0.12)),
                                         child: isPlaying && _isLoadingAudio
-                                            ? Padding(
-                                                padding:
-                                                    const EdgeInsets.all(7),
+                                            ? const Padding(
+                                                padding: EdgeInsets.all(7),
                                                 child:
                                                     CircularProgressIndicator(
                                                         color: Colors.white,
@@ -3405,7 +3497,6 @@ class _SurahDetailScreenState extends State<SurahDetailScreen> {
                                     ),
                                   ]),
                                   const SizedBox(height: 12),
-                                  // Arapça metin
                                   Text(v['arabic'] as String,
                                       style: GoogleFonts.notoNaskhArabic(
                                           fontSize: _fontSize,
@@ -3415,7 +3506,6 @@ class _SurahDetailScreenState extends State<SurahDetailScreen> {
                                               : const Color(0xFF1A1208)),
                                       textAlign: TextAlign.justify,
                                       textDirection: TextDirection.rtl),
-                                  // Meal
                                   if (_showTranslation &&
                                       (v['translation'] as String)
                                           .isNotEmpty) ...[
@@ -3433,12 +3523,10 @@ class _SurahDetailScreenState extends State<SurahDetailScreen> {
                                                 : Colors.black
                                                     .withOpacity(0.65))),
                                   ],
-                                ]),
-                          ),
-                        );
-                      },
-                    ),
-                  ),
+                                ])),
+                      );
+                    },
+                  )),
                   const AdBannerWidget(),
                 ]),
     );
@@ -3480,7 +3568,7 @@ class _BookmarksTabState extends State<BookmarksTab> {
     final gold = Theme.of(context).colorScheme.primary;
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
-    if (_bookmarks.isEmpty) {
+    if (_bookmarks.isEmpty)
       return Center(
           child: Column(mainAxisSize: MainAxisSize.min, children: [
         Icon(Icons.bookmark_border, size: 64, color: gold.withOpacity(0.3)),
@@ -3493,37 +3581,35 @@ class _BookmarksTabState extends State<BookmarksTab> {
             style: TextStyle(
                 fontSize: 12, color: isDark ? Colors.white24 : Colors.black26)),
       ]));
-    }
 
     return Column(children: [
       Padding(
-        padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
-        child: Row(children: [
-          Icon(Icons.bookmark, color: gold, size: 18),
-          const SizedBox(width: 8),
-          Text('${_bookmarks.length} ${L.bookmarks}',
-              style: TextStyle(
-                  fontSize: 14, fontWeight: FontWeight.w700, color: gold)),
-          const Spacer(),
-          TextButton.icon(
-            icon: const Icon(Icons.delete_sweep, size: 16),
-            label: const Text('Tümünü Temizle', style: TextStyle(fontSize: 12)),
-            style: TextButton.styleFrom(foregroundColor: Colors.red),
-            onPressed: () async {
-              final p = await SharedPreferences.getInstance();
-              await p.remove('bookmarks');
-              _load();
-            },
-          ),
-        ]),
-      ),
+          padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
+          child: Row(children: [
+            Icon(Icons.bookmark, color: gold, size: 18),
+            const SizedBox(width: 8),
+            Text('${_bookmarks.length} ${L.bookmarks}',
+                style: TextStyle(
+                    fontSize: 14, fontWeight: FontWeight.w700, color: gold)),
+            const Spacer(),
+            TextButton.icon(
+                icon: const Icon(Icons.delete_sweep, size: 16),
+                label: const Text('Tümünü Temizle',
+                    style: TextStyle(fontSize: 12)),
+                style: TextButton.styleFrom(foregroundColor: Colors.red),
+                onPressed: () async {
+                  final p = await SharedPreferences.getInstance();
+                  await p.remove('bookmarks');
+                  _load();
+                }),
+          ])),
       Expanded(
-        child: ListView.builder(
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-          itemCount: _bookmarks.length,
-          itemBuilder: (ctx, i) {
-            final b = _bookmarks[i];
-            return Card(
+          child: ListView.builder(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+        itemCount: _bookmarks.length,
+        itemBuilder: (ctx, i) {
+          final b = _bookmarks[i];
+          return Card(
               margin: const EdgeInsets.only(bottom: 8),
               child: InkWell(
                 onTap: () {
@@ -3543,75 +3629,76 @@ class _BookmarksTabState extends State<BookmarksTab> {
                 },
                 borderRadius: BorderRadius.circular(14),
                 child: Padding(
-                  padding: const EdgeInsets.all(14),
-                  child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
-                      children: [
-                        Row(children: [
-                          Container(
-                            padding: const EdgeInsets.symmetric(
-                                horizontal: 10, vertical: 4),
-                            decoration: BoxDecoration(
-                                color: gold.withOpacity(0.1),
-                                borderRadius: BorderRadius.circular(8),
-                                border:
-                                    Border.all(color: gold.withOpacity(0.3))),
-                            child: Text('${b['surahName']} — ${b['ayahNum']}',
-                                style: TextStyle(
-                                    fontSize: 11,
-                                    fontWeight: FontWeight.w700,
-                                    color: gold)),
-                          ),
-                          const Spacer(),
-                          Icon(Icons.bookmark, color: gold, size: 18),
-                          const SizedBox(width: 6),
-                          GestureDetector(
-                            onTap: () async {
-                              await BookmarkService().remove(
-                                  b['surahNum'] as int, b['ayahNum'] as int);
-                              _load();
-                            },
-                            child: Icon(Icons.close,
-                                color: isDark ? Colors.white38 : Colors.black38,
-                                size: 18),
-                          ),
-                        ]),
-                        const SizedBox(height: 10),
-                        Text(b['arabic'] as String? ?? '',
-                            style: GoogleFonts.notoNaskhArabic(
-                                fontSize: 18,
-                                height: 1.8,
-                                color: isDark
-                                    ? const Color(0xFFE8DCC8)
-                                    : const Color(0xFF1A1208)),
-                            textAlign: TextAlign.right,
-                            textDirection: TextDirection.rtl,
-                            maxLines: 2,
-                            overflow: TextOverflow.ellipsis),
-                        if ((b['translation'] as String? ?? '').isNotEmpty) ...[
-                          const SizedBox(height: 6),
-                          Text(b['translation'] as String,
-                              style: TextStyle(
-                                  fontSize: 12,
-                                  height: 1.5,
-                                  color:
-                                      isDark ? Colors.white54 : Colors.black54),
+                    padding: const EdgeInsets.all(14),
+                    child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          Row(children: [
+                            Container(
+                                padding: const EdgeInsets.symmetric(
+                                    horizontal: 10, vertical: 4),
+                                decoration: BoxDecoration(
+                                    color: gold.withOpacity(0.1),
+                                    borderRadius: BorderRadius.circular(8),
+                                    border: Border.all(
+                                        color: gold.withOpacity(0.3))),
+                                child: Text(
+                                    '${b['surahName']} — ${b['ayahNum']}',
+                                    style: TextStyle(
+                                        fontSize: 11,
+                                        fontWeight: FontWeight.w700,
+                                        color: gold))),
+                            const Spacer(),
+                            Icon(Icons.bookmark, color: gold, size: 18),
+                            const SizedBox(width: 6),
+                            GestureDetector(
+                                onTap: () async {
+                                  await BookmarkService().remove(
+                                      b['surahNum'] as int,
+                                      b['ayahNum'] as int);
+                                  _load();
+                                },
+                                child: Icon(Icons.close,
+                                    color: isDark
+                                        ? Colors.white38
+                                        : Colors.black38,
+                                    size: 18)),
+                          ]),
+                          const SizedBox(height: 10),
+                          Text(b['arabic'] as String? ?? '',
+                              style: GoogleFonts.notoNaskhArabic(
+                                  fontSize: 18,
+                                  height: 1.8,
+                                  color: isDark
+                                      ? const Color(0xFFE8DCC8)
+                                      : const Color(0xFF1A1208)),
+                              textAlign: TextAlign.right,
+                              textDirection: TextDirection.rtl,
                               maxLines: 2,
                               overflow: TextOverflow.ellipsis),
-                        ],
-                      ]),
-                ),
-              ),
-            );
-          },
-        ),
-      ),
+                          if ((b['translation'] as String? ?? '')
+                              .isNotEmpty) ...[
+                            const SizedBox(height: 6),
+                            Text(b['translation'] as String,
+                                style: TextStyle(
+                                    fontSize: 12,
+                                    height: 1.5,
+                                    color: isDark
+                                        ? Colors.white54
+                                        : Colors.black54),
+                                maxLines: 2,
+                                overflow: TextOverflow.ellipsis),
+                          ],
+                        ])),
+              ));
+        },
+      )),
     ]);
   }
 }
 
 // ─────────────────────────────────────────────
-//  NAMAZ VAKİTLERİ EKRANI
+//  NAMAZ VAKİTLERİ EKRANI — Profesyonel
 // ─────────────────────────────────────────────
 class PrayerTimesScreen extends StatefulWidget {
   const PrayerTimesScreen({super.key});
@@ -3636,15 +3723,18 @@ class _PrayerTimesScreenState extends State<PrayerTimesScreen>
   String? _nextPrayer;
   bool _notificationsEnabled = true;
   bool _adhanEnabled = true;
+  bool _reminderEnabled = true;
   Map<String, bool> _todayStatus = {};
   late AnimationController _pulseCtrl;
   late Animation<double> _pulseAnim;
-
-  // Ezan çaları
-  final AudioPlayer _adhanPlayer = AudioPlayer();
   bool _adhanPlaying = false;
-  String? _lastPlayedPrayer;
+  String? _lastPlayedKey;
   Timer? _prayerCheckTimer;
+  String _hijriDate = '';
+
+  // Haftalık vakitler (önümüzdeki 7 gün)
+  List<Map<String, dynamic>> _weeklyTimes = [];
+  bool _loadingWeekly = false;
 
   @override
   void initState() {
@@ -3671,6 +3761,7 @@ class _PrayerTimesScreenState extends State<PrayerTimesScreen>
         _manualCountry = p.getString('manual_country') ?? 'Turkey';
         _notificationsEnabled = p.getBool('notifications_enabled') ?? true;
         _adhanEnabled = p.getBool('adhan_enabled') ?? true;
+        _reminderEnabled = p.getBool('reminder_enabled') ?? true;
       });
   }
 
@@ -3689,11 +3780,9 @@ class _PrayerTimesScreenState extends State<PrayerTimesScreen>
     });
   }
 
-  // Her dakika vakti kontrol et ve tam vakitte ezan çal
   void _startPrayerCheckTimer() {
-    _prayerCheckTimer = Timer.periodic(const Duration(seconds: 30), (_) {
-      _checkAndPlayAdhan();
-    });
+    _prayerCheckTimer = Timer.periodic(
+        const Duration(seconds: 30), (_) => _checkAndPlayAdhan());
   }
 
   Future<void> _checkAndPlayAdhan() async {
@@ -3706,10 +3795,9 @@ class _PrayerTimesScreenState extends State<PrayerTimesScreen>
       if (parts.length < 2) continue;
       final h = int.tryParse(parts[0]) ?? 0;
       final m = int.tryParse(parts[1]) ?? 0;
-      if (now.hour == h &&
-          now.minute == m &&
-          _lastPlayedPrayer != '${prayer}_${now.day}') {
-        _lastPlayedPrayer = '${prayer}_${now.day}';
+      final key = '${prayer}_${now.year}-${now.month}-${now.day}';
+      if (now.hour == h && now.minute == m && _lastPlayedKey != key) {
+        _lastPlayedKey = key;
         await _playAdhan();
         break;
       }
@@ -3718,25 +3806,17 @@ class _PrayerTimesScreenState extends State<PrayerTimesScreen>
 
   Future<void> _playAdhan() async {
     if (_adhanPlaying) return;
-    try {
-      _adhanPlaying = true;
-      // Uygulama içi ezan ses çalma (internet URL veya asset)
-      await _adhanPlayer
-          .setUrl('https://www.islamcan.com/audio/adhan/azan1.mp3');
-      await _adhanPlayer.play();
-      _adhanPlayer.processingStateStream.listen((ps) {
-        if (ps == ProcessingState.completed) _adhanPlaying = false;
-      });
-    } catch (_) {
-      _adhanPlaying = false;
-    }
+    if (mounted) setState(() => _adhanPlaying = true);
+    await AdhanPlayer().playAdhan();
+    AdhanPlayer().player.processingStateStream.listen((ps) {
+      if (ps == ProcessingState.completed && mounted)
+        setState(() => _adhanPlaying = false);
+    });
   }
 
   Future<void> _stopAdhan() async {
-    try {
-      await _adhanPlayer.stop();
-    } catch (_) {}
-    _adhanPlaying = false;
+    await AdhanPlayer().stop();
+    if (mounted) setState(() => _adhanPlaying = false);
   }
 
   Future<void> _fetchPrayerTimes() async {
@@ -3776,9 +3856,19 @@ class _PrayerTimesScreenState extends State<PrayerTimesScreen>
             country: _manualCountry.isNotEmpty ? _manualCountry : 'Turkey',
             method: _method);
       }
+
       final timings = PrayerTimesService().extractTimings(data);
       final nextPrayer = PrayerTimesService().getNextPrayer(timings);
       final dur = PrayerTimesService().timeUntilNext(timings);
+
+      // Hicri tarih
+      try {
+        final hijri = data['date']?['hijri'];
+        if (hijri != null)
+          _hijriDate =
+              '${hijri['day']} ${hijri['month']?['en']} ${hijri['year']} H';
+      } catch (_) {}
+
       if (mounted)
         setState(() {
           _timings = timings;
@@ -3787,18 +3877,29 @@ class _PrayerTimesScreenState extends State<PrayerTimesScreen>
           _timeUntilNext = dur;
           _loading = false;
         });
+
       await NotificationService().schedulePrayerNotifications(
-          times: timings,
-          cityName:
-              '$_cityName${_countryName.isNotEmpty ? ", $_countryName" : ""}',
-          adhanEnabled: _adhanEnabled,
-          notificationsEnabled: _notificationsEnabled);
-      if (nextPrayer != null)
+        times: timings,
+        cityName:
+            '$_cityName${_countryName.isNotEmpty ? ", $_countryName" : ""}',
+        adhanEnabled: _adhanEnabled,
+        notificationsEnabled: _notificationsEnabled,
+        reminderEnabled: _reminderEnabled,
+      );
+
+      if (nextPrayer != null) {
         await HomeWidgetService.updatePrayerWidget(
-            nextPrayer: _prayerLocal(nextPrayer),
-            nextTime: timings[nextPrayer] ?? '--:--',
-            cityName: _cityName,
-            allTimes: timings);
+          nextPrayer: _prayerLocal(nextPrayer),
+          nextTime: timings[nextPrayer] ?? '--:--',
+          cityName: _cityName,
+          allTimes: timings,
+          countdownStr: dur != null ? _formatDur(dur) : '',
+          hijriDate: _hijriDate,
+        );
+      }
+
+      // Haftalık vakitler yükle
+      _fetchWeeklyTimes();
     } catch (e) {
       if (mounted)
         setState(() {
@@ -3808,12 +3909,62 @@ class _PrayerTimesScreenState extends State<PrayerTimesScreen>
     }
   }
 
+  Future<void> _fetchWeeklyTimes() async {
+    if (_loading) return;
+    if (mounted) setState(() => _loadingWeekly = true);
+    try {
+      final now = DateTime.now();
+      final prefs = await SharedPreferences.getInstance();
+      final method = prefs.getInt('prayer_method') ?? 13;
+      final weekly = <Map<String, dynamic>>[];
+
+      for (int i = 0; i < 7; i++) {
+        final date = now.add(Duration(days: i));
+        try {
+          Map<String, dynamic> data;
+          if (_useGPS && _timings.isNotEmpty) {
+            // GPS koordinatlarını tekrar kullan
+            final pref = await SharedPreferences.getInstance();
+            final lat = pref.getDouble('last_lat') ?? 41.0;
+            final lon = pref.getDouble('last_lon') ?? 29.0;
+            data = await PrayerTimesService()
+                .fetchByCoords(lat: lat, lon: lon, method: method, date: date);
+          } else {
+            data = await PrayerTimesService().fetchByCity(
+                city: _manualCity.isNotEmpty ? _manualCity : 'Istanbul',
+                country: _manualCountry.isNotEmpty ? _manualCountry : 'Turkey',
+                method: method,
+                date: date);
+          }
+          final timings = PrayerTimesService().extractTimings(data);
+          const weekdays = ['Pzt', 'Sal', 'Çar', 'Per', 'Cum', 'Cmt', 'Paz'];
+          weekly.add({
+            'date': date,
+            'dayName': i == 0
+                ? 'Bugün'
+                : i == 1
+                    ? 'Yarın'
+                    : weekdays[date.weekday - 1],
+            'timings': timings
+          });
+        } catch (_) {}
+      }
+
+      if (mounted)
+        setState(() {
+          _weeklyTimes = weekly;
+          _loadingWeekly = false;
+        });
+    } catch (_) {
+      if (mounted) setState(() => _loadingWeekly = false);
+    }
+  }
+
   @override
   void dispose() {
     _timer?.cancel();
     _prayerCheckTimer?.cancel();
     _pulseCtrl.dispose();
-    _adhanPlayer.dispose();
     super.dispose();
   }
 
@@ -3897,20 +4048,21 @@ class _PrayerTimesScreenState extends State<PrayerTimesScreen>
                         color: isDark ? Colors.white60 : Colors.black54),
                     overflow: TextOverflow.ellipsis)),
           ]),
+          if (_hijriDate.isNotEmpty)
+            Text(_hijriDate,
+                style: TextStyle(fontSize: 10, color: gold.withOpacity(0.7))),
           Text(dateStr,
               style: TextStyle(
                   fontSize: 11,
                   color: isDark ? Colors.white38 : Colors.black38)),
         ])),
         Row(mainAxisSize: MainAxisSize.min, children: [
-          // Ezan test butonu
           if (_adhanEnabled)
             IconButton(
-              icon: Icon(_adhanPlaying ? Icons.stop : Icons.volume_up,
-                  color: _adhanPlaying ? Colors.red : gold, size: 22),
-              onPressed: _adhanPlaying ? _stopAdhan : _playAdhan,
-              tooltip: _adhanPlaying ? 'Ezanı Durdur' : 'Ezan Dinle',
-            ),
+                icon: Icon(_adhanPlaying ? Icons.stop : Icons.volume_up,
+                    color: _adhanPlaying ? Colors.red : gold, size: 22),
+                onPressed: _adhanPlaying ? _stopAdhan : _playAdhan,
+                tooltip: _adhanPlaying ? 'Ezanı Durdur' : 'Ezan Dinle'),
           IconButton(
               icon: Icon(
                   _notificationsEnabled
@@ -3946,6 +4098,8 @@ class _PrayerTimesScreenState extends State<PrayerTimesScreen>
           if (_meta != null) _buildMetaInfo(gold, isDark),
           const SizedBox(height: 16),
           _buildDailyTracker(gold, isDark),
+          const SizedBox(height: 16),
+          if (_weeklyTimes.isNotEmpty) _buildWeeklyCard(gold, isDark),
           const SizedBox(height: 16),
           const NativeAdCard(),
         ]),
@@ -4046,10 +4200,11 @@ class _PrayerTimesScreenState extends State<PrayerTimesScreen>
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 13),
             decoration: BoxDecoration(
-                color: isNext ? pColor.withOpacity(0.08) : Colors.transparent,
-                borderRadius: BorderRadius.vertical(
-                    top: i == 0 ? const Radius.circular(16) : Radius.zero,
-                    bottom: isLast ? const Radius.circular(16) : Radius.zero)),
+              color: isNext ? pColor.withOpacity(0.08) : Colors.transparent,
+              borderRadius: BorderRadius.vertical(
+                  top: i == 0 ? const Radius.circular(16) : Radius.zero,
+                  bottom: isLast ? const Radius.circular(16) : Radius.zero),
+            ),
             child: Row(children: [
               Container(
                   width: 36,
@@ -4083,7 +4238,7 @@ class _PrayerTimesScreenState extends State<PrayerTimesScreen>
                                 style: TextStyle(
                                     fontSize: 9,
                                     color: pColor,
-                                    fontWeight: FontWeight.w700)))
+                                    fontWeight: FontWeight.w700))),
                       ],
                     ]),
                     if (!isMain)
@@ -4100,21 +4255,21 @@ class _PrayerTimesScreenState extends State<PrayerTimesScreen>
                     _loadTodayStatus();
                   },
                   child: AnimatedContainer(
-                    duration: const Duration(milliseconds: 250),
-                    width: 28,
-                    height: 28,
-                    margin: const EdgeInsets.only(right: 10),
-                    decoration: BoxDecoration(
-                        shape: BoxShape.circle,
-                        color: (_todayStatus[key] ?? false)
-                            ? pColor
-                            : Colors.transparent,
-                        border: Border.all(
-                            color: pColor.withOpacity(0.5), width: 1.5)),
-                    child: (_todayStatus[key] ?? false)
-                        ? const Icon(Icons.check, color: Colors.white, size: 16)
-                        : null,
-                  ),
+                      duration: const Duration(milliseconds: 250),
+                      width: 28,
+                      height: 28,
+                      margin: const EdgeInsets.only(right: 10),
+                      decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          color: (_todayStatus[key] ?? false)
+                              ? pColor
+                              : Colors.transparent,
+                          border: Border.all(
+                              color: pColor.withOpacity(0.5), width: 1.5)),
+                      child: (_todayStatus[key] ?? false)
+                          ? const Icon(Icons.check,
+                              color: Colors.white, size: 16)
+                          : null),
                 ),
               Text(_timings[key] ?? '--:--',
                   style: TextStyle(
@@ -4173,6 +4328,98 @@ class _PrayerTimesScreenState extends State<PrayerTimesScreen>
                     overflow: TextOverflow.ellipsis)),
           ]),
         ],
+      ]),
+    );
+  }
+
+  // ── Haftalık Vakitler ─────────────────────
+  Widget _buildWeeklyCard(Color gold, bool isDark) {
+    return Container(
+      decoration: BoxDecoration(
+          color: isDark ? const Color(0xFF161B22) : Colors.white,
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(
+              color: isDark
+                  ? Colors.white.withOpacity(0.06)
+                  : Colors.black.withOpacity(0.06))),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 14, 16, 10),
+          child: Row(children: [
+            Icon(Icons.date_range, color: gold, size: 18),
+            const SizedBox(width: 8),
+            Text('Haftalık Vakitler',
+                style: TextStyle(
+                    fontSize: 14, fontWeight: FontWeight.w700, color: gold)),
+          ]),
+        ),
+        SingleChildScrollView(
+          scrollDirection: Axis.horizontal,
+          padding: const EdgeInsets.fromLTRB(12, 0, 12, 14),
+          child: Row(
+              children: _weeklyTimes.map((dayData) {
+            final dayName = dayData['dayName'] as String;
+            final timings = dayData['timings'] as Map<String, String>;
+            final date = dayData['date'] as DateTime;
+            final isToday = dayName == 'Bugün';
+            return Container(
+              width: 100,
+              margin: const EdgeInsets.only(right: 10),
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                gradient: isToday
+                    ? LinearGradient(
+                        colors: [gold.withOpacity(0.25), gold.withOpacity(0.1)])
+                    : null,
+                color: isToday
+                    ? null
+                    : (isDark
+                        ? const Color(0xFF21262D)
+                        : const Color(0xFFF8F5F0)),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(
+                    color: isToday
+                        ? gold.withOpacity(0.5)
+                        : (isDark
+                            ? Colors.white.withOpacity(0.06)
+                            : Colors.black.withOpacity(0.06))),
+              ),
+              child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(dayName,
+                        style: TextStyle(
+                            fontSize: 11,
+                            fontWeight: FontWeight.w800,
+                            color: isToday
+                                ? gold
+                                : (isDark ? Colors.white70 : Colors.black87))),
+                    Text('${date.day}/${date.month}',
+                        style: TextStyle(
+                            fontSize: 9,
+                            color: isDark ? Colors.white38 : Colors.black38)),
+                    const SizedBox(height: 8),
+                    ...kMainPrayerKeys.map((key) {
+                      final pColor = kPrayerColors[key] ?? gold;
+                      return Padding(
+                        padding: const EdgeInsets.only(bottom: 3),
+                        child: Row(children: [
+                          Icon(kPrayerIcons[key], size: 9, color: pColor),
+                          const SizedBox(width: 4),
+                          Text(timings[key] ?? '--:--',
+                              style: TextStyle(
+                                  fontSize: 9,
+                                  fontWeight: FontWeight.w600,
+                                  color: isDark
+                                      ? Colors.white70
+                                      : Colors.black87)),
+                        ]),
+                      );
+                    }),
+                  ]),
+            );
+          }).toList()),
+        ),
       ]),
     );
   }
@@ -4282,98 +4529,124 @@ class _PrayerTimesScreenState extends State<PrayerTimesScreen>
                         color: gold)),
                 const SizedBox(height: 16),
                 SwitchListTile(
-                  contentPadding: EdgeInsets.zero,
-                  title:
-                      Text(L.prayerNotif, style: const TextStyle(fontSize: 14)),
-                  subtitle: Text('Her namaz vakti için bildirim',
-                      style: TextStyle(
-                          fontSize: 11,
-                          color: Theme.of(ctx).textTheme.bodySmall?.color)),
-                  value: _notificationsEnabled,
-                  activeColor: gold,
-                  onChanged: (val) async {
-                    setM(() => _notificationsEnabled = val);
-                    setState(() => _notificationsEnabled = val);
-                    (await SharedPreferences.getInstance())
-                        .setBool('notifications_enabled', val);
-                    if (_timings.isNotEmpty)
-                      await NotificationService().schedulePrayerNotifications(
-                          times: _timings,
-                          cityName: _cityName,
-                          adhanEnabled: _adhanEnabled,
-                          notificationsEnabled: val);
-                  },
-                ),
+                    contentPadding: EdgeInsets.zero,
+                    title: Text(L.prayerNotif,
+                        style: const TextStyle(fontSize: 14)),
+                    subtitle: Text('Her namaz vakti için bildirim',
+                        style: TextStyle(
+                            fontSize: 11,
+                            color: Theme.of(ctx).textTheme.bodySmall?.color)),
+                    value: _notificationsEnabled,
+                    activeColor: gold,
+                    onChanged: (val) async {
+                      setM(() => _notificationsEnabled = val);
+                      setState(() => _notificationsEnabled = val);
+                      (await SharedPreferences.getInstance())
+                          .setBool('notifications_enabled', val);
+                      if (_timings.isNotEmpty)
+                        await NotificationService().schedulePrayerNotifications(
+                            times: _timings,
+                            cityName: _cityName,
+                            adhanEnabled: _adhanEnabled,
+                            notificationsEnabled: val,
+                            reminderEnabled: _reminderEnabled);
+                    }),
                 SwitchListTile(
-                  contentPadding: EdgeInsets.zero,
-                  title:
-                      Text(L.adhanSound, style: const TextStyle(fontSize: 14)),
-                  subtitle: Text('Vakitte ezan sesi çalınsın',
-                      style: TextStyle(
-                          fontSize: 11,
-                          color: Theme.of(ctx).textTheme.bodySmall?.color)),
-                  value: _adhanEnabled,
-                  activeColor: gold,
-                  onChanged: _notificationsEnabled
-                      ? (val) async {
-                          setM(() => _adhanEnabled = val);
-                          setState(() => _adhanEnabled = val);
-                          (await SharedPreferences.getInstance())
-                              .setBool('adhan_enabled', val);
-                          if (_timings.isNotEmpty)
-                            await NotificationService()
-                                .schedulePrayerNotifications(
-                                    times: _timings,
-                                    cityName: _cityName,
-                                    adhanEnabled: val,
-                                    notificationsEnabled:
-                                        _notificationsEnabled);
-                        }
-                      : null,
-                ),
-                // Test ezan butonu
+                    contentPadding: EdgeInsets.zero,
+                    title: Text(L.adhanSound,
+                        style: const TextStyle(fontSize: 14)),
+                    subtitle: Text('Vakitte ezan sesi çalınsın',
+                        style: TextStyle(
+                            fontSize: 11,
+                            color: Theme.of(ctx).textTheme.bodySmall?.color)),
+                    value: _adhanEnabled,
+                    activeColor: gold,
+                    onChanged: _notificationsEnabled
+                        ? (val) async {
+                            setM(() => _adhanEnabled = val);
+                            setState(() => _adhanEnabled = val);
+                            (await SharedPreferences.getInstance())
+                                .setBool('adhan_enabled', val);
+                            if (_timings.isNotEmpty)
+                              await NotificationService()
+                                  .schedulePrayerNotifications(
+                                      times: _timings,
+                                      cityName: _cityName,
+                                      adhanEnabled: val,
+                                      notificationsEnabled:
+                                          _notificationsEnabled,
+                                      reminderEnabled: _reminderEnabled);
+                          }
+                        : null),
+                SwitchListTile(
+                    contentPadding: EdgeInsets.zero,
+                    title: const Text('10 Dk Hatırlatma',
+                        style: TextStyle(fontSize: 14)),
+                    subtitle: Text('Namaza 10 dakika kala bildirim',
+                        style: TextStyle(
+                            fontSize: 11,
+                            color: Theme.of(ctx).textTheme.bodySmall?.color)),
+                    value: _reminderEnabled,
+                    activeColor: gold,
+                    onChanged: _notificationsEnabled
+                        ? (val) async {
+                            setM(() => _reminderEnabled = val);
+                            setState(() => _reminderEnabled = val);
+                            (await SharedPreferences.getInstance())
+                                .setBool('reminder_enabled', val);
+                            if (_timings.isNotEmpty)
+                              await NotificationService()
+                                  .schedulePrayerNotifications(
+                                      times: _timings,
+                                      cityName: _cityName,
+                                      adhanEnabled: _adhanEnabled,
+                                      notificationsEnabled:
+                                          _notificationsEnabled,
+                                      reminderEnabled: val);
+                          }
+                        : null),
                 const SizedBox(height: 8),
                 SizedBox(
-                  width: double.infinity,
-                  child: OutlinedButton.icon(
-                    icon: Icon(_adhanPlaying ? Icons.stop : Icons.play_arrow,
-                        size: 18),
-                    label: Text(
-                        _adhanPlaying ? 'Ezanı Durdur' : 'Ezan Sesini Test Et',
-                        style: const TextStyle(fontSize: 13)),
-                    style: OutlinedButton.styleFrom(
-                        foregroundColor: gold,
-                        side: BorderSide(color: gold.withOpacity(0.4)),
-                        shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(10)),
-                        padding: const EdgeInsets.symmetric(vertical: 12)),
-                    onPressed: () async {
-                      if (_adhanPlaying) {
-                        await _stopAdhan();
-                        setM(() {});
-                      } else {
-                        await _playAdhan();
-                        setM(() {});
-                      }
-                    },
-                  ),
-                ),
+                    width: double.infinity,
+                    child: OutlinedButton.icon(
+                      icon: Icon(_adhanPlaying ? Icons.stop : Icons.play_arrow,
+                          size: 18),
+                      label: Text(
+                          _adhanPlaying
+                              ? 'Ezanı Durdur'
+                              : 'Ezan Sesini Test Et',
+                          style: const TextStyle(fontSize: 13)),
+                      style: OutlinedButton.styleFrom(
+                          foregroundColor: gold,
+                          side: BorderSide(color: gold.withOpacity(0.4)),
+                          shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(10)),
+                          padding: const EdgeInsets.symmetric(vertical: 12)),
+                      onPressed: () async {
+                        if (_adhanPlaying) {
+                          await _stopAdhan();
+                          setM(() {});
+                        } else {
+                          await _playAdhan();
+                          setM(() {});
+                        }
+                      },
+                    )),
                 const SizedBox(height: 8),
                 Container(
-                  padding: const EdgeInsets.all(12),
-                  decoration: BoxDecoration(
-                      color: gold.withOpacity(0.08),
-                      borderRadius: BorderRadius.circular(10)),
-                  child: Row(children: [
-                    Icon(Icons.info_outline, size: 14, color: gold),
-                    const SizedBox(width: 8),
-                    Expanded(
-                        child: Text(
-                            'Bildirim sesini telefon ayarlarından ayarlayabilirsiniz. Ezan, tam vakitte otomatik çalar.',
-                            style: TextStyle(
-                                fontSize: 11, color: gold.withOpacity(0.8)))),
-                  ]),
-                ),
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                        color: gold.withOpacity(0.08),
+                        borderRadius: BorderRadius.circular(10)),
+                    child: Row(children: [
+                      Icon(Icons.info_outline, size: 14, color: gold),
+                      const SizedBox(width: 8),
+                      Expanded(
+                          child: Text(
+                              'Tam vakitte ezan otomatik çalar. Bildirim sesini telefon ayarlarından değiştirebilirsiniz.',
+                              style: TextStyle(
+                                  fontSize: 11, color: gold.withOpacity(0.8)))),
+                    ])),
                 const SizedBox(height: 12),
               ]),
         );
@@ -4413,61 +4686,64 @@ class _PrayerTimesScreenState extends State<PrayerTimesScreen>
                 Row(children: [
                   Expanded(
                       child: GestureDetector(
-                    onTap: () => setM(() => localUseGPS = true),
-                    child: Container(
-                        padding: const EdgeInsets.symmetric(vertical: 10),
-                        decoration: BoxDecoration(
-                            color: localUseGPS
-                                ? gold.withOpacity(0.15)
-                                : Colors.transparent,
-                            borderRadius: BorderRadius.circular(10),
-                            border: Border.all(
-                                color: localUseGPS
-                                    ? gold
-                                    : Colors.grey.withOpacity(0.3))),
-                        child: Row(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            children: [
-                              Icon(Icons.gps_fixed,
-                                  color: localUseGPS ? gold : Colors.grey,
-                                  size: 16),
-                              const SizedBox(width: 6),
-                              Text(L.useGPS,
-                                  style: TextStyle(
-                                      color: localUseGPS ? gold : Colors.grey,
-                                      fontWeight: FontWeight.w600,
-                                      fontSize: 13))
-                            ])),
-                  )),
+                          onTap: () => setM(() => localUseGPS = true),
+                          child: Container(
+                              padding: const EdgeInsets.symmetric(vertical: 10),
+                              decoration: BoxDecoration(
+                                  color: localUseGPS
+                                      ? gold.withOpacity(0.15)
+                                      : Colors.transparent,
+                                  borderRadius: BorderRadius.circular(10),
+                                  border: Border.all(
+                                      color: localUseGPS
+                                          ? gold
+                                          : Colors.grey.withOpacity(0.3))),
+                              child: Row(
+                                  mainAxisAlignment: MainAxisAlignment.center,
+                                  children: [
+                                    Icon(Icons.gps_fixed,
+                                        color: localUseGPS ? gold : Colors.grey,
+                                        size: 16),
+                                    const SizedBox(width: 6),
+                                    Text(L.useGPS,
+                                        style: TextStyle(
+                                            color: localUseGPS
+                                                ? gold
+                                                : Colors.grey,
+                                            fontWeight: FontWeight.w600,
+                                            fontSize: 13))
+                                  ])))),
                   const SizedBox(width: 10),
                   Expanded(
                       child: GestureDetector(
-                    onTap: () => setM(() => localUseGPS = false),
-                    child: Container(
-                        padding: const EdgeInsets.symmetric(vertical: 10),
-                        decoration: BoxDecoration(
-                            color: !localUseGPS
-                                ? gold.withOpacity(0.15)
-                                : Colors.transparent,
-                            borderRadius: BorderRadius.circular(10),
-                            border: Border.all(
-                                color: !localUseGPS
-                                    ? gold
-                                    : Colors.grey.withOpacity(0.3))),
-                        child: Row(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            children: [
-                              Icon(Icons.edit_location,
-                                  color: !localUseGPS ? gold : Colors.grey,
-                                  size: 16),
-                              const SizedBox(width: 6),
-                              Text(L.manualLocation,
-                                  style: TextStyle(
-                                      color: !localUseGPS ? gold : Colors.grey,
-                                      fontWeight: FontWeight.w600,
-                                      fontSize: 13))
-                            ])),
-                  )),
+                          onTap: () => setM(() => localUseGPS = false),
+                          child: Container(
+                              padding: const EdgeInsets.symmetric(vertical: 10),
+                              decoration: BoxDecoration(
+                                  color: !localUseGPS
+                                      ? gold.withOpacity(0.15)
+                                      : Colors.transparent,
+                                  borderRadius: BorderRadius.circular(10),
+                                  border: Border.all(
+                                      color: !localUseGPS
+                                          ? gold
+                                          : Colors.grey.withOpacity(0.3))),
+                              child: Row(
+                                  mainAxisAlignment: MainAxisAlignment.center,
+                                  children: [
+                                    Icon(Icons.edit_location,
+                                        color:
+                                            !localUseGPS ? gold : Colors.grey,
+                                        size: 16),
+                                    const SizedBox(width: 6),
+                                    Text(L.manualLocation,
+                                        style: TextStyle(
+                                            color: !localUseGPS
+                                                ? gold
+                                                : Colors.grey,
+                                            fontWeight: FontWeight.w600,
+                                            fontSize: 13))
+                                  ])))),
                 ]),
                 const SizedBox(height: 12),
                 if (!localUseGPS) ...[
@@ -4522,36 +4798,35 @@ class _PrayerTimesScreenState extends State<PrayerTimesScreen>
                 ),
                 const SizedBox(height: 16),
                 SizedBox(
-                  width: double.infinity,
-                  child: ElevatedButton(
-                    style: ElevatedButton.styleFrom(
-                        backgroundColor: gold,
-                        foregroundColor: Colors.black,
-                        padding: const EdgeInsets.symmetric(vertical: 14),
-                        shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(12))),
-                    onPressed: () async {
-                      final p = await SharedPreferences.getInstance();
-                      setState(() {
-                        _useGPS = localUseGPS;
-                        _method = localMethod;
-                      });
-                      await p.setBool('use_gps', localUseGPS);
-                      await p.setInt('prayer_method', localMethod);
-                      if (!localUseGPS) {
-                        _manualCity = cityCtrl.text;
-                        _manualCountry = countryCtrl.text;
-                        await p.setString('manual_city', _manualCity);
-                        await p.setString('manual_country', _manualCountry);
-                      }
-                      if (ctx.mounted) Navigator.pop(ctx);
-                      _fetchPrayerTimes();
-                    },
-                    child: Text(
-                        '${localUseGPS ? L.useGPS : L.manualLocation} ile Kaydet',
-                        style: const TextStyle(fontWeight: FontWeight.w700)),
-                  ),
-                ),
+                    width: double.infinity,
+                    child: ElevatedButton(
+                      style: ElevatedButton.styleFrom(
+                          backgroundColor: gold,
+                          foregroundColor: Colors.black,
+                          padding: const EdgeInsets.symmetric(vertical: 14),
+                          shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(12))),
+                      onPressed: () async {
+                        final p = await SharedPreferences.getInstance();
+                        setState(() {
+                          _useGPS = localUseGPS;
+                          _method = localMethod;
+                        });
+                        await p.setBool('use_gps', localUseGPS);
+                        await p.setInt('prayer_method', localMethod);
+                        if (!localUseGPS) {
+                          _manualCity = cityCtrl.text;
+                          _manualCountry = countryCtrl.text;
+                          await p.setString('manual_city', _manualCity);
+                          await p.setString('manual_country', _manualCountry);
+                        }
+                        if (ctx.mounted) Navigator.pop(ctx);
+                        _fetchPrayerTimes();
+                      },
+                      child: Text(
+                          '${localUseGPS ? L.useGPS : L.manualLocation} ile Kaydet',
+                          style: const TextStyle(fontWeight: FontWeight.w700)),
+                    )),
               ]),
         );
       }),
@@ -4570,13 +4845,13 @@ class DailyScreen extends StatefulWidget {
 
 class _DailyScreenState extends State<DailyScreen> {
   int get _verseIdx {
-    final now = DateTime.now();
-    return (now.day + now.month) % kDailyVerses.length;
+    final n = DateTime.now();
+    return (n.day + n.month) % kDailyVerses.length;
   }
 
   int get _hadithIdx {
-    final now = DateTime.now();
-    return (now.day + now.month + 1) % kHadiths.length;
+    final n = DateTime.now();
+    return (n.day + n.month + 1) % kHadiths.length;
   }
 
   @override
@@ -4585,7 +4860,6 @@ class _DailyScreenState extends State<DailyScreen> {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final verse = kDailyVerses[_verseIdx];
     final hadith = kHadiths[_hadithIdx];
-
     return Scaffold(
       appBar: AppBar(title: Text(L.daily)),
       body: Column(children: [
@@ -4612,15 +4886,14 @@ class _DailyScreenState extends State<DailyScreen> {
     return Container(
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
-        gradient: LinearGradient(
-            colors: isDark
-                ? [const Color(0xFF1A2332), const Color(0xFF161B22)]
-                : [const Color(0xFFFAF3E0), const Color(0xFFEDE3D0)],
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight),
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: gold.withOpacity(0.3)),
-      ),
+          gradient: LinearGradient(
+              colors: isDark
+                  ? [const Color(0xFF1A2332), const Color(0xFF161B22)]
+                  : [const Color(0xFFFAF3E0), const Color(0xFFEDE3D0)],
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight),
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(color: gold.withOpacity(0.3))),
       child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
         Row(children: [
           Icon(Icons.auto_stories, color: gold, size: 18),
@@ -4813,7 +5086,7 @@ class _DailyScreenState extends State<DailyScreen> {
               Text('${day['day']}/${day['month']}',
                   style: TextStyle(
                       fontSize: 11,
-                      color: isDark ? Colors.white38 : Colors.black38))
+                      color: isDark ? Colors.white38 : Colors.black38)),
             ]))),
       ]),
     );
@@ -4923,7 +5196,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
             Text('Kur\'an-ı Kerim',
                 style: TextStyle(
                     color: gold, fontSize: 14, fontWeight: FontWeight.w700)),
-            Text('v3.0.0 • Tüm hakları saklıdır',
+            Text('v3.2.0 • Tüm hakları saklıdır',
                 style: TextStyle(
                     color: isDark ? Colors.white38 : Colors.black38,
                     fontSize: 11)),
@@ -5021,26 +5294,26 @@ class _SettingsScreenState extends State<SettingsScreen> {
         builder: (ctx) {
           final gold = Theme.of(ctx).colorScheme.primary;
           return DraggableScrollableSheet(
-            initialChildSize: 0.6,
-            minChildSize: 0.4,
-            maxChildSize: 0.9,
-            expand: false,
-            builder: (_, ctrl) => Padding(
-                padding: const EdgeInsets.all(20),
-                child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(L.reciter,
-                          style: GoogleFonts.tajawal(
-                              fontSize: 18,
-                              fontWeight: FontWeight.w800,
-                              color: gold)),
-                      const SizedBox(height: 16),
-                      Expanded(
-                          child: ListView(
-                              controller: ctrl,
-                              children: kReciters.entries
-                                  .map((e) => ListTile(
+              initialChildSize: 0.6,
+              minChildSize: 0.4,
+              maxChildSize: 0.9,
+              expand: false,
+              builder: (_, ctrl) => Padding(
+                  padding: const EdgeInsets.all(20),
+                  child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(L.reciter,
+                            style: GoogleFonts.tajawal(
+                                fontSize: 18,
+                                fontWeight: FontWeight.w800,
+                                color: gold)),
+                        const SizedBox(height: 16),
+                        Expanded(
+                            child: ListView(
+                                controller: ctrl,
+                                children: kReciters.entries
+                                    .map((e) => ListTile(
                                         title: Text(e.value['name']!,
                                             style:
                                                 const TextStyle(fontSize: 14)),
@@ -5053,11 +5326,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
                                         onTap: () {
                                           appState?.setReciter(e.key);
                                           Navigator.pop(ctx);
-                                        },
-                                      ))
-                                  .toList())),
-                    ])),
-          );
+                                        }))
+                                    .toList())),
+                      ])));
         });
   }
 
@@ -5144,57 +5415,58 @@ class JuzListTab extends StatelessWidget {
                         surahs: surahs))),
             borderRadius: BorderRadius.circular(14),
             child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-              child: Row(children: [
-                Container(
-                    width: 50,
-                    height: 50,
-                    decoration: BoxDecoration(
-                        shape: BoxShape.circle,
-                        gradient: LinearGradient(
-                            colors: [gold, gold.withOpacity(0.6)],
-                            begin: Alignment.topLeft,
-                            end: Alignment.bottomRight)),
-                    child: Column(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          Text('$juzNum',
-                              style: const TextStyle(
-                                  fontSize: 18,
-                                  fontWeight: FontWeight.w800,
-                                  color: Color(0xFF0D1117))),
-                          Text(L.juz,
-                              style: const TextStyle(
-                                  fontSize: 8,
-                                  fontWeight: FontWeight.w700,
-                                  color: Color(0xFF0D1117)))
-                        ])),
-                const SizedBox(width: 14),
-                Expanded(
-                    child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                      Text(
-                          '${startSurah.englishName}  –  ${endSurah.englishName}',
-                          style: const TextStyle(
-                              fontSize: 14, fontWeight: FontWeight.w600)),
-                      const SizedBox(height: 3),
-                      Text(
-                          '${startSurah.number}:$startAyah  →  ${endSurah.number}:$endAyah',
-                          style: TextStyle(
-                              fontSize: 11,
-                              color: isDark ? Colors.white38 : Colors.black38)),
-                    ])),
-                Column(crossAxisAlignment: CrossAxisAlignment.end, children: [
-                  Text(juzName,
-                      style: GoogleFonts.notoNaskhArabic(
-                          fontSize: 20, color: gold),
-                      textDirection: TextDirection.rtl),
-                  const SizedBox(height: 4),
-                  Icon(Icons.play_circle_outline, color: gold, size: 22),
-                ]),
-              ]),
-            ),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                child: Row(children: [
+                  Container(
+                      width: 50,
+                      height: 50,
+                      decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          gradient: LinearGradient(
+                              colors: [gold, gold.withOpacity(0.6)],
+                              begin: Alignment.topLeft,
+                              end: Alignment.bottomRight)),
+                      child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Text('$juzNum',
+                                style: const TextStyle(
+                                    fontSize: 18,
+                                    fontWeight: FontWeight.w800,
+                                    color: Color(0xFF0D1117))),
+                            Text(L.juz,
+                                style: const TextStyle(
+                                    fontSize: 8,
+                                    fontWeight: FontWeight.w700,
+                                    color: Color(0xFF0D1117))),
+                          ])),
+                  const SizedBox(width: 14),
+                  Expanded(
+                      child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                        Text(
+                            '${startSurah.englishName}  –  ${endSurah.englishName}',
+                            style: const TextStyle(
+                                fontSize: 14, fontWeight: FontWeight.w600)),
+                        const SizedBox(height: 3),
+                        Text(
+                            '${startSurah.number}:$startAyah  →  ${endSurah.number}:$endAyah',
+                            style: TextStyle(
+                                fontSize: 11,
+                                color:
+                                    isDark ? Colors.white38 : Colors.black38)),
+                      ])),
+                  Column(crossAxisAlignment: CrossAxisAlignment.end, children: [
+                    Text(juzName,
+                        style: GoogleFonts.notoNaskhArabic(
+                            fontSize: 20, color: gold),
+                        textDirection: TextDirection.rtl),
+                    const SizedBox(height: 4),
+                    Icon(Icons.play_circle_outline, color: gold, size: 22),
+                  ]),
+                ])),
           ),
         );
       },
@@ -5333,19 +5605,16 @@ class _JuzDetailScreenState extends State<JuzDetailScreen> {
     final gold = Theme.of(context).colorScheme.primary;
     final isDark = Theme.of(context).brightness == Brightness.dark;
     return Scaffold(
-      appBar: AppBar(
-        title: Text('${L.juz} ${widget.juzNumber}'),
-        actions: [
-          IconButton(
-              icon: const Icon(Icons.text_increase, size: 20),
-              onPressed: () => setState(
-                  () => _fontSize = (_fontSize + 2).clamp(16, 36).toDouble())),
-          IconButton(
-              icon: const Icon(Icons.text_decrease, size: 20),
-              onPressed: () => setState(
-                  () => _fontSize = (_fontSize - 2).clamp(16, 36).toDouble())),
-        ],
-      ),
+      appBar: AppBar(title: Text('${L.juz} ${widget.juzNumber}'), actions: [
+        IconButton(
+            icon: const Icon(Icons.text_increase, size: 20),
+            onPressed: () => setState(
+                () => _fontSize = (_fontSize + 2).clamp(16, 36).toDouble())),
+        IconButton(
+            icon: const Icon(Icons.text_decrease, size: 20),
+            onPressed: () => setState(
+                () => _fontSize = (_fontSize - 2).clamp(16, 36).toDouble())),
+      ]),
       body: _loading
           ? _loadingCenter()
           : _error.isNotEmpty
@@ -5527,7 +5796,7 @@ class _MushafTabState extends State<MushafTab> {
   int _currentPage = 1;
   bool _loading = false;
   String _error = '';
-  Map<int, List<Map<String, dynamic>>> _pageCache = {};
+  final Map<int, List<Map<String, dynamic>>> _pageCache = {};
   double _fontSize = 22;
   bool _showNav = true;
   static const int kTotalPages = 604;
@@ -5569,12 +5838,11 @@ class _MushafTabState extends State<MushafTab> {
       final ayahs = (data['ayahs'] as List)
           .map((e) => Map<String, dynamic>.from(e as Map))
           .toList();
-      if (mounted) {
+      if (mounted)
         setState(() {
           _pageCache[page] = ayahs;
           _loading = false;
         });
-      }
       if (page < kTotalPages && !_pageCache.containsKey(page + 1))
         _prefetchPage(page + 1);
       if (page > 1 && !_pageCache.containsKey(page - 1))
@@ -5837,28 +6105,27 @@ class _MushafTabState extends State<MushafTab> {
     return Container(
         color: bg,
         child: SingleChildScrollView(
-            padding: const EdgeInsets.fromLTRB(18, 90, 18, 80),
-            child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  Center(
-                      child: Container(
-                          margin: const EdgeInsets.only(bottom: 12),
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: 12, vertical: 4),
-                          decoration: BoxDecoration(
-                              color: gold.withOpacity(0.1),
-                              borderRadius: BorderRadius.circular(6),
-                              border:
-                                  Border.all(color: gold.withOpacity(0.25))),
-                          child: Text('صفحة $page',
-                              style: GoogleFonts.notoNaskhArabic(
-                                  fontSize: 12,
-                                  color: gold,
-                                  fontWeight: FontWeight.w600),
-                              textDirection: TextDirection.rtl))),
-                  ...widgets,
-                ])));
+          padding: const EdgeInsets.fromLTRB(18, 90, 18, 80),
+          child:
+              Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+            Center(
+                child: Container(
+                    margin: const EdgeInsets.only(bottom: 12),
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+                    decoration: BoxDecoration(
+                        color: gold.withOpacity(0.1),
+                        borderRadius: BorderRadius.circular(6),
+                        border: Border.all(color: gold.withOpacity(0.25))),
+                    child: Text('صفحة $page',
+                        style: GoogleFonts.notoNaskhArabic(
+                            fontSize: 12,
+                            color: gold,
+                            fontWeight: FontWeight.w600),
+                        textDirection: TextDirection.rtl))),
+            ...widgets,
+          ]),
+        ));
   }
 
   Widget _surahHeader(String arabic, String english, bool showBasmala,
