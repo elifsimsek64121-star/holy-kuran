@@ -121,11 +121,9 @@ class NotificationService {
   }) async {
     await cancelAll();
     if (!notificationsEnabled) return;
-
     final now = DateTime.now();
     int adhanId = 100;
     int remindId = 200;
-
     for (final prayer in kMainPrayerKeys) {
       final t = times[prayer];
       if (t == null) continue;
@@ -133,17 +131,15 @@ class NotificationService {
       if (parts.length < 2) continue;
       final h = int.tryParse(parts[0]) ?? 0;
       final m = int.tryParse(parts[1]) ?? 0;
-
       var dt = DateTime(now.year, now.month, now.day, h, m);
       if (dt.isBefore(now)) dt = dt.add(const Duration(days: 1));
       final tzDt = tz.TZDateTime.from(dt, tz.local);
-
       final adhanDetails = AndroidNotificationDetails(
         adhanEnabled ? _channelId : _silentCh,
         adhanEnabled ? _channelName : 'Namaz Vakitleri (Sessiz)',
         channelDescription: _channelDesc,
         importance: Importance.max,
-        priority: Priority.high,
+        priority: Priority.max,
         playSound: adhanEnabled,
         sound: adhanEnabled
             ? const RawResourceAndroidNotificationSound('adhan')
@@ -158,6 +154,9 @@ class NotificationService {
         color: const Color(0xFFC9A84C),
         fullScreenIntent: true,
         category: AndroidNotificationCategory.alarm,
+        visibility: NotificationVisibility.public,
+        ongoing: false,
+        autoCancel: true,
       );
       const iosAdhan = DarwinNotificationDetails(
         presentAlert: true,
@@ -166,7 +165,6 @@ class NotificationService {
         sound: 'adhan.aiff',
         interruptionLevel: InterruptionLevel.timeSensitive,
       );
-
       try {
         await flutterLocalNotificationsPlugin.zonedSchedule(
           adhanId++,
@@ -180,13 +178,11 @@ class NotificationService {
               UILocalNotificationDateInterpretation.absoluteTime,
         );
       } catch (_) {}
-
       if (reminderEnabled) {
         var reminderDt = dt.subtract(const Duration(minutes: 10));
         if (reminderDt.isBefore(now))
           reminderDt = reminderDt.add(const Duration(days: 1));
         final tzReminder = tz.TZDateTime.from(reminderDt, tz.local);
-
         final reminderDetails = AndroidNotificationDetails(
           _reminderCh,
           _reminderChName,
@@ -196,6 +192,8 @@ class NotificationService {
           enableVibration: true,
           icon: '@mipmap/ic_launcher',
           color: const Color(0xFFC9A84C),
+          visibility: NotificationVisibility.public,
+          fullScreenIntent: false,
         );
         const iosReminder = DarwinNotificationDetails(
           presentAlert: true,
@@ -251,11 +249,11 @@ class NotificationService {
 }
 
 // ─────────────────────────────────────────────
-//  HOME WIDGET SERVİSİ — Profesyonel
+//  HOME WIDGET SERVİSİ
 // ─────────────────────────────────────────────
 class HomeWidgetService {
-  static const String _iOSPrayer = 'PrayerTimesWidget';
-  static const String _androidPrayer = 'PrayerTimesWidgetProvider';
+  static const String _iOSPrayer = 'NurvaPrayerWidget';
+  static const String _androidPrayer = 'NurvaPrayerWidgetProvider';
 
   static Future<void> updatePrayerWidget({
     required String nextPrayer,
@@ -312,8 +310,8 @@ class HomeWidgetService {
       await HomeWidget.saveWidgetData<String>('verse_translation', translation);
       await HomeWidget.saveWidgetData<String>('verse_ref', ref);
       await HomeWidget.updateWidget(
-        iOSName: 'DailyVerseWidget',
-        androidName: 'DailyVerseWidgetProvider',
+        iOSName: 'NurvaVerseWidget',
+        androidName: 'NurvaVerseWidgetProvider',
       );
     } catch (_) {}
   }
@@ -326,7 +324,6 @@ class BookmarkService {
   static final BookmarkService _i = BookmarkService._();
   factory BookmarkService() => _i;
   BookmarkService._();
-
   static const String _key = 'bookmarks';
 
   Future<List<Map<String, dynamic>>> getAll() async {
@@ -466,9 +463,9 @@ class L {
   static String get widgetInfo =>
       t('Ana Ekran Widget\'ı', 'Home Screen Widget', 'أداة الشاشة');
   static String get widgetDesc => t(
-      'Ana ekrana widget ekleyerek namaz vakitlerini ve günlük ayeti görüntüleyin.',
-      'Add a widget to see prayer times & daily verse.',
-      'أضف أداة إلى الشاشة الرئيسية.');
+      'Ana ekrana NURVA widget ekleyerek namaz vakitlerini görüntüleyin.',
+      'Add NURVA widget to see prayer times on home screen.',
+      'أضف أداة NURVA إلى الشاشة الرئيسية.');
   static String get countryCity => t('Ülke', 'Country', 'البلد');
   static String get manualLocation =>
       t('Manuel Konum', 'Manual Location', 'إدخال يدوي');
@@ -711,78 +708,87 @@ class NativeAdCard extends StatelessWidget {
 const double kKaabaLat = 21.4225;
 const double kKaabaLon = 39.8262;
 
+const Color kNurvaNavy = Color(0xFF1A2744);
+const Color kNurvaNavyDark = Color(0xFF0F1A33);
+const Color kNurvaGold = Color(0xFFC9A84C);
+const Color kNurvaGoldLight = Color(0xFFE8C96A);
+const Color kNurvaGreen = Color(0xFF1E5C3A);
+const Color kNurvaGreenLight = Color(0xFF2A7A50);
+const Color kNurvaCream = Color(0xFFF5EDD6);
+const Color kNurvaCreamDark = Color(0xFFEDE0C0);
+
 const Map<String, Map<String, String>> kReciters = {
   'ar.alafasy': {
     'name': 'Mişari Raşid el-Afasî',
     'style': 'Murattal',
     'audioId': 'Alafasy_128kbps',
-    'everyayah': 'Alafasy_128kbps',
+    'everyayah': 'Alafasy_128kbps'
   },
   'ar.maher': {
     'name': 'Maher el-Muaykılî',
     'style': 'Murattal',
     'audioId': 'MaherAlMuaiqly128kbps',
-    'everyayah': 'MaherAlMuaiqly128kbps',
+    'everyayah': 'MaherAlMuaiqly128kbps'
   },
   'ar.minshawi': {
     'name': 'Minsavî (Murattal)',
     'style': 'Murattal',
     'audioId': 'Minshawy_Murattal_128kbps',
-    'everyayah': 'Minshawy_Murattal_128kbps',
+    'everyayah': 'Minshawy_Murattal_128kbps'
   },
   'ar.husary': {
     'name': 'Husarî (Murattal)',
     'style': 'Murattal',
     'audioId': 'Husary_128kbps',
-    'everyayah': 'Husary_128kbps',
+    'everyayah': 'Husary_128kbps'
   },
   'ar.husaryMujawwad': {
     'name': 'Husarî (Mücevved)',
     'style': 'Mücevved',
     'audioId': 'Husary_Mujawwad_128kbps',
-    'everyayah': 'Husary_128kbps',
+    'everyayah': 'Husary_128kbps'
   },
   'ar.abdulbasit': {
     'name': 'Abdülbasit Abdüssamed',
     'style': 'Mücevved',
     'audioId': 'AbdulSamad_128kbps',
-    'everyayah': 'AbdulSamad_128kbps',
+    'everyayah': 'AbdulSamad_128kbps'
   },
   'ar.ghamadi': {
     'name': 'Saad el-Gamedî',
     'style': 'Murattal',
     'audioId': 'Ghamadi_40kbps',
-    'everyayah': 'Ghamadi_40kbps',
+    'everyayah': 'Ghamadi_40kbps'
   },
   'ar.sudais': {
     'name': 'Abdurrahman es-Sudeys',
     'style': 'Murattal',
     'audioId': 'Sudais_128kbps',
-    'everyayah': 'Sudais_128kbps',
+    'everyayah': 'Sudais_128kbps'
   },
   'ar.shuraym': {
     'name': 'Suud eş-Şüreym',
     'style': 'Murattal',
     'audioId': 'Shuraym_128kbps',
-    'everyayah': 'Shuraym_128kbps',
+    'everyayah': 'Shuraym_128kbps'
   },
   'ar.basfar': {
     'name': 'Abdullah Basfar',
     'style': 'Murattal',
     'audioId': 'Abdullah_Basfar_128kbps',
-    'everyayah': 'Abdullah_Basfar_128kbps',
+    'everyayah': 'Abdullah_Basfar_128kbps'
   },
   'ar.shatri': {
     'name': 'Ebu Bekr eş-Şatrî',
     'style': 'Murattal',
     'audioId': 'abu_bakr_ash-shaatree_128kbps',
-    'everyayah': 'abu_bakr_ash-shaatree_128kbps',
+    'everyayah': 'abu_bakr_ash-shaatree_128kbps'
   },
   'ar.minshawiMujawwad': {
     'name': 'Minsavî (Mücevved)',
     'style': 'Mücevved',
     'audioId': 'Minshawy_Mujawwad_128kbps',
-    'everyayah': 'Minshawy_Murattal_128kbps',
+    'everyayah': 'Minshawy_Murattal_128kbps'
   },
 };
 
@@ -1497,10 +1503,10 @@ const Map<String, Map<String, String>> kZikirList = {
 };
 
 // ─────────────────────────────────────────────
-//  YARDIMCI
+//  YARDIMCI FONKSİYONLAR
 // ─────────────────────────────────────────────
 Widget _loadingCenter() =>
-    const Center(child: CircularProgressIndicator(color: Color(0xFFC9A84C)));
+    const Center(child: CircularProgressIndicator(color: kNurvaGold));
 
 Widget _errorCenter(String msg, VoidCallback retry) => Center(
       child: Padding(
@@ -1513,9 +1519,12 @@ Widget _errorCenter(String msg, VoidCallback retry) => Center(
               textAlign: TextAlign.center),
           const SizedBox(height: 12),
           ElevatedButton.icon(
-              icon: const Icon(Icons.refresh),
-              label: const Text('Tekrar Dene'),
-              onPressed: retry),
+            icon: const Icon(Icons.refresh),
+            label: const Text('Tekrar Dene'),
+            onPressed: retry,
+            style: ElevatedButton.styleFrom(
+                backgroundColor: kNurvaGold, foregroundColor: Colors.black),
+          ),
         ]),
       ),
     );
@@ -1564,12 +1573,11 @@ class PrayerTimesService {
   factory PrayerTimesService() => _i;
   PrayerTimesService._();
 
-  Future<Map<String, dynamic>> fetchByCoords({
-    required double lat,
-    required double lon,
-    required int method,
-    DateTime? date,
-  }) async {
+  Future<Map<String, dynamic>> fetchByCoords(
+      {required double lat,
+      required double lon,
+      required int method,
+      DateTime? date}) async {
     final d = date ?? DateTime.now();
     final ds =
         '${d.day.toString().padLeft(2, '0')}-${d.month.toString().padLeft(2, '0')}-${d.year}';
@@ -1583,12 +1591,11 @@ class PrayerTimesService {
     return data['data'] as Map<String, dynamic>;
   }
 
-  Future<Map<String, dynamic>> fetchByCity({
-    required String city,
-    required String country,
-    required int method,
-    DateTime? date,
-  }) async {
+  Future<Map<String, dynamic>> fetchByCity(
+      {required String city,
+      required String country,
+      required int method,
+      DateTime? date}) async {
     final d = date ?? DateTime.now();
     final ds =
         '${d.day.toString().padLeft(2, '0')}-${d.month.toString().padLeft(2, '0')}-${d.year}';
@@ -1723,7 +1730,7 @@ class PrayerTrackerService {
 }
 
 // ─────────────────────────────────────────────
-//  EZAN OYNATICI — Çoklu URL, gerçek zamanlı
+//  EZAN OYNATICI
 // ─────────────────────────────────────────────
 class AdhanPlayer {
   static final AdhanPlayer _i = AdhanPlayer._();
@@ -1733,7 +1740,6 @@ class AdhanPlayer {
   final AudioPlayer _player = AudioPlayer();
   bool _isPlaying = false;
 
-  // Çalışan ezan URL'leri — sırayla denenir
   static const List<String> _adhanUrls = [
     'https://www.islamcan.com/audio/adhan/azan1.mp3',
     'https://audio.islamicfinder.org/audio/adhan/adhan_fajr.mp3',
@@ -1773,9 +1779,7 @@ class AdhanPlayer {
 
   bool get isPlaying => _isPlaying;
   AudioPlayer get player => _player;
-  void dispose() {
-    _player.dispose();
-  }
+  void dispose() => _player.dispose();
 }
 
 // ─────────────────────────────────────────────
@@ -1856,60 +1860,53 @@ class _QuranAppState extends State<QuranApp> {
 
   @override
   Widget build(BuildContext context) {
-    const gold = Color(0xFFC9A84C);
-    const teal = Color(0xFF1ABC9C);
-
     return MaterialApp(
       debugShowCheckedModeBanner: false,
-      title: 'Kur\'an-ı Kerim',
+      title: 'NURVA – Kur\'an-ı Kerim',
       theme: ThemeData(
         useMaterial3: true,
         brightness: isDark ? Brightness.dark : Brightness.light,
-        scaffoldBackgroundColor:
-            isDark ? const Color(0xFF0D1117) : const Color(0xFFF8F5F0),
+        scaffoldBackgroundColor: isDark ? kNurvaNavyDark : kNurvaCream,
         colorScheme: isDark
             ? ColorScheme.dark(
-                primary: gold,
-                secondary: teal,
-                surface: const Color(0xFF161B22),
+                primary: kNurvaGold,
+                secondary: kNurvaGreen,
+                surface: kNurvaNavy,
                 surfaceContainerHighest: const Color(0xFF21262D))
             : ColorScheme.light(
-                primary: gold,
-                secondary: teal,
+                primary: kNurvaGold,
+                secondary: kNurvaGreen,
                 surface: Colors.white,
-                surfaceContainerHighest: const Color(0xFFF0EBE3)),
+                surfaceContainerHighest: kNurvaCreamDark),
         cardTheme: CardThemeData(
-          color: isDark ? const Color(0xFF161B22) : Colors.white,
+          color: isDark ? kNurvaNavy : Colors.white,
           elevation: 0,
           shape:
               RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
         ),
         appBarTheme: AppBarTheme(
-          backgroundColor:
-              isDark ? const Color(0xFF0D1117) : const Color(0xFFF8F5F0),
+          backgroundColor: isDark ? kNurvaNavyDark : kNurvaCream,
           elevation: 0,
           centerTitle: true,
           titleTextStyle: GoogleFonts.tajawal(
-              fontSize: 18, fontWeight: FontWeight.w700, color: gold),
-          iconTheme:
-              IconThemeData(color: isDark ? Colors.white70 : Colors.black54),
+              fontSize: 18, fontWeight: FontWeight.w700, color: kNurvaGold),
+          iconTheme: IconThemeData(color: isDark ? Colors.white70 : kNurvaNavy),
         ),
         textTheme: GoogleFonts.tajawalTextTheme().apply(
-          bodyColor: isDark ? const Color(0xFFE6EDF3) : const Color(0xFF1A1A2E),
-          displayColor:
-              isDark ? const Color(0xFFE6EDF3) : const Color(0xFF1A1A2E),
+          bodyColor: isDark ? const Color(0xFFE6EDF3) : kNurvaNavyDark,
+          displayColor: isDark ? const Color(0xFFE6EDF3) : kNurvaNavyDark,
         ),
         navigationBarTheme: NavigationBarThemeData(
-          backgroundColor:
-              isDark ? const Color(0xFF161B22) : const Color(0xFFFFFFFF),
-          indicatorColor: gold.withOpacity(0.15),
+          backgroundColor: isDark ? kNurvaNavy : Colors.white,
+          indicatorColor: kNurvaGold.withOpacity(0.15),
           labelTextStyle: WidgetStateProperty.resolveWith((states) {
             final active = states.contains(WidgetState.selected);
             return GoogleFonts.tajawal(
                 fontSize: 10,
                 fontWeight: FontWeight.w600,
-                color:
-                    active ? gold : (isDark ? Colors.white38 : Colors.black38));
+                color: active
+                    ? kNurvaGold
+                    : (isDark ? Colors.white38 : Colors.black38));
           }),
         ),
         dividerTheme: DividerThemeData(
@@ -2015,6 +2012,554 @@ class _RootScreenState extends State<RootScreen> {
 }
 
 // ─────────────────────────────────────────────
+//  NURVA PROFESSIONAL HOME WIDGET CARD
+//  Resme birebir uygun tasarım
+// ─────────────────────────────────────────────
+class NurvaWidgetPreviewCard extends StatelessWidget {
+  final Map<String, String> timings;
+  final String nextPrayer;
+  final String cityName;
+  final String hijriDate;
+  final Duration? timeUntilNext;
+
+  const NurvaWidgetPreviewCard({
+    super.key,
+    required this.timings,
+    required this.nextPrayer,
+    required this.cityName,
+    required this.hijriDate,
+    this.timeUntilNext,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final now = DateTime.now();
+    const weekdays = [
+      'Pazartesi',
+      'Salı',
+      'Çarşamba',
+      'Perşembe',
+      'Cuma',
+      'Cumartesi',
+      'Pazar'
+    ];
+    const months = [
+      'Ocak',
+      'Şubat',
+      'Mart',
+      'Nisan',
+      'Mayıs',
+      'Haziran',
+      'Temmuz',
+      'Ağustos',
+      'Eylül',
+      'Ekim',
+      'Kasım',
+      'Aralık'
+    ];
+    final dayName = weekdays[now.weekday - 1];
+    final dateStr = '${now.day} ${months[now.month - 1]} ${now.year}';
+
+    // Resimde görünen 6 vakit
+    final displayKeys = ['Imsak', 'Sunrise', 'Dhuhr', 'Asr', 'Maghrib', 'Isha'];
+    final displayLabels = {
+      'Imsak': 'İmsak',
+      'Sunrise': 'Güneş',
+      'Dhuhr': 'Öğle',
+      'Asr': 'İkindi',
+      'Maghrib': 'Akşam',
+      'Isha': 'Yatsı'
+    };
+    final displayIconData = {
+      'Imsak': Icons.bedtime_outlined,
+      'Sunrise': Icons.wb_twilight,
+      'Dhuhr': Icons.light_mode,
+      'Asr': Icons.sunny_snowing,
+      'Maghrib': Icons.nights_stay_outlined,
+      'Isha': Icons.dark_mode_outlined,
+    };
+
+    return Container(
+      margin: const EdgeInsets.symmetric(horizontal: 0, vertical: 4),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(28),
+        boxShadow: [
+          BoxShadow(
+              color: Colors.black.withOpacity(0.40),
+              blurRadius: 30,
+              offset: const Offset(0, 12)),
+          BoxShadow(
+              color: kNurvaGold.withOpacity(0.08),
+              blurRadius: 20,
+              offset: const Offset(0, 4)),
+        ],
+      ),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(28),
+        child: IntrinsicHeight(
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              // ── SOL PANEL: NURVA Branding ──
+              Expanded(
+                flex: 46,
+                child: Container(
+                  padding: const EdgeInsets.fromLTRB(18, 22, 16, 22),
+                  decoration: const BoxDecoration(
+                    gradient: LinearGradient(
+                      colors: [Color(0xFF1C2E52), Color(0xFF0E1829)],
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
+                    ),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      // Logo satırı
+                      Row(children: [
+                        _NurvaLogoIcon(size: 40),
+                        const SizedBox(width: 10),
+                        Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text('NURVA',
+                                  style: GoogleFonts.tajawal(
+                                      fontSize: 22,
+                                      fontWeight: FontWeight.w900,
+                                      color: kNurvaGold,
+                                      letterSpacing: 3.5)),
+                              Text("KUR'AN-I KERİM",
+                                  style: GoogleFonts.tajawal(
+                                      fontSize: 7.5,
+                                      fontWeight: FontWeight.w600,
+                                      color: kNurvaGold.withOpacity(0.75),
+                                      letterSpacing: 1.8)),
+                            ]),
+                      ]),
+                      const SizedBox(height: 18),
+
+                      // Başlık
+                      Text("KUR'AN-I KERİM",
+                          style: GoogleFonts.tajawal(
+                              fontSize: 13,
+                              fontWeight: FontWeight.w800,
+                              color: Colors.white)),
+                      const SizedBox(height: 10),
+
+                      // Ayet kutusu — resme uygun
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 12, vertical: 11),
+                        decoration: BoxDecoration(
+                          color: Colors.white.withOpacity(0.07),
+                          borderRadius: BorderRadius.circular(14),
+                          border:
+                              Border.all(color: kNurvaGold.withOpacity(0.22)),
+                        ),
+                        child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                '"Biz Kur\'an\'ı düşünüp öğüt alasınız diye indirdik."',
+                                style: GoogleFonts.tajawal(
+                                    fontSize: 10.5,
+                                    color: Colors.white70,
+                                    fontStyle: FontStyle.italic,
+                                    height: 1.55),
+                              ),
+                              const SizedBox(height: 5),
+                              Text('(Sad Suresi, 29. Ayet)',
+                                  style: GoogleFonts.tajawal(
+                                      fontSize: 9,
+                                      color: kNurvaGold.withOpacity(0.85),
+                                      fontWeight: FontWeight.w600)),
+                            ]),
+                      ),
+                      const SizedBox(height: 14),
+
+                      // "Kur'an-ı Kerim'i Oku" butonu
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 14, vertical: 11),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFF1E3060),
+                          borderRadius: BorderRadius.circular(13),
+                          border:
+                              Border.all(color: kNurvaGold.withOpacity(0.38)),
+                        ),
+                        child: Row(children: [
+                          const Text('📖', style: TextStyle(fontSize: 15)),
+                          const SizedBox(width: 9),
+                          Expanded(
+                            child: Text("Kur'an-ı Kerim'i Oku",
+                                style: GoogleFonts.tajawal(
+                                    fontSize: 11.5,
+                                    color: Colors.white,
+                                    fontWeight: FontWeight.w600)),
+                          ),
+                          const Icon(Icons.arrow_forward_ios,
+                              color: kNurvaGold, size: 11),
+                        ]),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+
+              // ── SAĞ PANEL: Namaz Vakitleri ──
+              Expanded(
+                flex: 54,
+                child: Container(
+                  padding: const EdgeInsets.fromLTRB(16, 18, 16, 18),
+                  color: const Color(0xFFF4EDD5),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      // Başlık + Takvim ikonu
+                      Row(children: [
+                        Text('NAMAZ VAKİTLERİ',
+                            style: GoogleFonts.tajawal(
+                                fontSize: 10.5,
+                                fontWeight: FontWeight.w800,
+                                color: kNurvaNavy,
+                                letterSpacing: 0.4)),
+                        const Spacer(),
+                        Container(
+                          width: 32,
+                          height: 32,
+                          decoration: BoxDecoration(
+                            color: Colors.white,
+                            borderRadius: BorderRadius.circular(8),
+                            border: Border.all(
+                                color: Colors.black.withOpacity(0.09)),
+                            boxShadow: [
+                              BoxShadow(
+                                  color: Colors.black.withOpacity(0.06),
+                                  blurRadius: 4)
+                            ],
+                          ),
+                          child: const Icon(Icons.calendar_today_outlined,
+                              size: 14, color: kNurvaNavy),
+                        ),
+                      ]),
+                      const SizedBox(height: 5),
+
+                      // Şehir + Tarih
+                      Row(children: [
+                        const Icon(Icons.location_on,
+                            size: 12, color: kNurvaNavy),
+                        const SizedBox(width: 2),
+                        Expanded(
+                          child: Text(cityName.isNotEmpty ? cityName : 'Konum',
+                              style: GoogleFonts.tajawal(
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.w700,
+                                  color: kNurvaNavy),
+                              overflow: TextOverflow.ellipsis),
+                        ),
+                      ]),
+                      Text('$dateStr  •  $dayName',
+                          style: const TextStyle(
+                              fontSize: 9.5, color: Colors.black45)),
+                      const SizedBox(height: 12),
+
+                      // Vakit listesi
+                      ...displayKeys.map((key) {
+                        final label = displayLabels[key] ?? key;
+                        final time = timings[key] ?? '--:--';
+                        final icon = displayIconData[key] ?? Icons.access_time;
+                        final isHighlighted = key == nextPrayer ||
+                            (key == 'Imsak' && nextPrayer == 'Fajr');
+
+                        if (isHighlighted) {
+                          return Container(
+                            margin: const EdgeInsets.only(bottom: 4),
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 12, vertical: 9),
+                            decoration: BoxDecoration(
+                              color: kNurvaGreen,
+                              borderRadius: BorderRadius.circular(11),
+                            ),
+                            child: Row(children: [
+                              Icon(icon, color: kNurvaGold, size: 15),
+                              const SizedBox(width: 9),
+                              Text(label,
+                                  style: GoogleFonts.tajawal(
+                                      fontSize: 13,
+                                      fontWeight: FontWeight.w800,
+                                      color: Colors.white)),
+                              const Spacer(),
+                              Text(time,
+                                  style: GoogleFonts.tajawal(
+                                      fontSize: 15,
+                                      fontWeight: FontWeight.w900,
+                                      color: Colors.white)),
+                              const SizedBox(width: 7),
+                              const Icon(Icons.notifications_active,
+                                  color: Colors.white70, size: 13),
+                            ]),
+                          );
+                        }
+
+                        return Padding(
+                          padding: const EdgeInsets.symmetric(vertical: 3.5),
+                          child: Row(children: [
+                            Icon(icon,
+                                color: kNurvaNavy.withOpacity(0.5), size: 14),
+                            const SizedBox(width: 9),
+                            Text(label,
+                                style: GoogleFonts.tajawal(
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.w600,
+                                    color: kNurvaNavy)),
+                            const Spacer(),
+                            Text(time,
+                                style: GoogleFonts.tajawal(
+                                    fontSize: 13,
+                                    fontWeight: FontWeight.w700,
+                                    color: kNurvaNavy)),
+                          ]),
+                        );
+                      }).toList(),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+// ─────────────────────────────────────────────
+//  NURVA LOGO İKON (CustomPaint cami)
+// ─────────────────────────────────────────────
+class _NurvaLogoIcon extends StatelessWidget {
+  final double size;
+  const _NurvaLogoIcon({this.size = 40});
+  @override
+  Widget build(BuildContext context) {
+    return CustomPaint(
+      size: Size(size, size),
+      painter: _NurvaLogoPainter(),
+    );
+  }
+}
+
+class _NurvaLogoPainter extends CustomPainter {
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()
+      ..color = kNurvaGold
+      ..style = PaintingStyle.fill;
+    final cx = size.width / 2;
+    final cy = size.height / 2;
+
+    // Dış daire
+    paint.style = PaintingStyle.stroke;
+    paint.strokeWidth = 1.5;
+    paint.color = kNurvaGold.withOpacity(0.5);
+    canvas.drawCircle(Offset(cx, cy), size.width / 2 - 1, paint);
+    paint.style = PaintingStyle.fill;
+    paint.color = kNurvaGold;
+
+    // Kubbe
+    final domePath = Path();
+    domePath.addArc(
+        Rect.fromCenter(center: Offset(cx, cy + 2), width: 22, height: 18),
+        math.pi,
+        math.pi);
+    domePath.close();
+    canvas.drawPath(domePath, paint);
+
+    // Minare sol
+    canvas.drawRect(Rect.fromLTWH(cx - 13, cy - 5, 4.5, 15), paint);
+    canvas.drawOval(
+        Rect.fromCenter(
+            center: Offset(cx - 10.75, cy - 6.5), width: 4.5, height: 5.5),
+        paint);
+
+    // Minare sağ
+    canvas.drawRect(Rect.fromLTWH(cx + 8.5, cy - 5, 4.5, 15), paint);
+    canvas.drawOval(
+        Rect.fromCenter(
+            center: Offset(cx + 10.75, cy - 6.5), width: 4.5, height: 5.5),
+        paint);
+
+    // Hilal
+    final crescentPaint = Paint()
+      ..color = kNurvaGold
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 1.8;
+    canvas.drawArc(
+        Rect.fromCenter(center: Offset(cx, cy - 11), width: 7, height: 7),
+        -2.5,
+        5.0,
+        false,
+        crescentPaint);
+  }
+
+  @override
+  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
+}
+
+// ─────────────────────────────────────────────
+//  NURVA QUICK NAV CARD (Resme uygun)
+// ─────────────────────────────────────────────
+class NurvaQuickNavCard extends StatelessWidget {
+  final VoidCallback onSureler;
+  final VoidCallback onTesbihat;
+  final VoidCallback onFavorilerim;
+  final VoidCallback onDuaTakvimi;
+
+  const NurvaQuickNavCard({
+    super.key,
+    required this.onSureler,
+    required this.onTesbihat,
+    required this.onFavorilerim,
+    required this.onDuaTakvimi,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    return Container(
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(22),
+        border: Border.all(color: kNurvaGold.withOpacity(0.18)),
+        boxShadow: [
+          BoxShadow(
+              color: Colors.black.withOpacity(0.12),
+              blurRadius: 12,
+              offset: const Offset(0, 4))
+        ],
+      ),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(22),
+        child: Row(
+          children: [
+            // Sol: 4 buton
+            Expanded(
+              flex: 75,
+              child: Container(
+                padding:
+                    const EdgeInsets.symmetric(vertical: 16, horizontal: 4),
+                color:
+                    isDark ? const Color(0xFF1A2332) : const Color(0xFFF0E8D0),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                  children: [
+                    _navItem(
+                        icon: Icons.menu_book,
+                        emoji: '📖',
+                        label: 'Sureler',
+                        onTap: onSureler,
+                        isDark: isDark),
+                    _navItem(
+                        icon: Icons.loop,
+                        emoji: '📿',
+                        label: 'Tesbihat',
+                        onTap: onTesbihat,
+                        isDark: isDark),
+                    _navItem(
+                        icon: Icons.bookmark,
+                        emoji: '🔖',
+                        label: 'Favorilerim',
+                        onTap: onFavorilerim,
+                        isDark: isDark),
+                    _navItem(
+                        icon: Icons.calendar_month,
+                        emoji: '🗓️',
+                        label: 'Dua Takvimi',
+                        onTap: onDuaTakvimi,
+                        isDark: isDark),
+                  ],
+                ),
+              ),
+            ),
+            // Sağ: Cami + Hilal dekor
+            SizedBox(
+              width: 88,
+              child: Container(
+                decoration: const BoxDecoration(
+                  gradient: LinearGradient(
+                    colors: [kNurvaGreen, Color(0xFF0E1829)],
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                  ),
+                ),
+                child: Stack(
+                  children: [
+                    // Hilal
+                    Positioned(
+                      top: 8,
+                      right: 8,
+                      child: Text('🌙',
+                          style: TextStyle(
+                              fontSize: 14,
+                              color: kNurvaGold.withOpacity(0.9))),
+                    ),
+                    // Cami
+                    const Center(
+                      child: Padding(
+                        padding: EdgeInsets.all(12),
+                        child: Text('🕌', style: TextStyle(fontSize: 34)),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _navItem(
+      {required IconData icon,
+      required String emoji,
+      required String label,
+      required VoidCallback onTap,
+      required bool isDark}) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Container(
+            width: 46,
+            height: 46,
+            decoration: BoxDecoration(
+              color: isDark
+                  ? Colors.white.withOpacity(0.07)
+                  : Colors.white.withOpacity(0.75),
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: kNurvaGold.withOpacity(0.2)),
+              boxShadow: [
+                BoxShadow(color: Colors.black.withOpacity(0.08), blurRadius: 6)
+              ],
+            ),
+            child: Center(
+                child: Text(emoji, style: const TextStyle(fontSize: 20))),
+          ),
+          const SizedBox(height: 6),
+          Text(label,
+              style: GoogleFonts.tajawal(
+                  fontSize: 9.5,
+                  fontWeight: FontWeight.w600,
+                  color:
+                      isDark ? Colors.white60 : kNurvaNavy.withOpacity(0.75)),
+              textAlign: TextAlign.center),
+        ],
+      ),
+    );
+  }
+}
+
+// ─────────────────────────────────────────────
 //  HOME SCREEN
 // ─────────────────────────────────────────────
 class HomeScreen extends StatefulWidget {
@@ -2107,13 +2652,11 @@ class _HomeScreenState extends State<HomeScreen> {
       final nextPrayer = PrayerTimesService().getNextPrayer(timings);
       final dur = PrayerTimesService().timeUntilNext(timings);
 
-      // Hicri tarih
       try {
         final hijri = data['date']?['hijri'];
-        if (hijri != null) {
+        if (hijri != null)
           _hijriDate =
               '${hijri['day']} ${hijri['month']?['en']} ${hijri['year']}';
-        }
       } catch (_) {}
 
       if (mounted)
@@ -2163,7 +2706,15 @@ class _HomeScreenState extends State<HomeScreen> {
     final gold = Theme.of(context).colorScheme.primary;
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final now = DateTime.now();
-    const weekdays = ['Pzt', 'Sal', 'Çar', 'Per', 'Cum', 'Cmt', 'Paz'];
+    const weekdays = [
+      'Pazartesi',
+      'Salı',
+      'Çarşamba',
+      'Perşembe',
+      'Cuma',
+      'Cumartesi',
+      'Pazar'
+    ];
     const months = [
       'Ocak',
       'Şubat',
@@ -2186,65 +2737,131 @@ class _HomeScreenState extends State<HomeScreen> {
     return Scaffold(
       body: SafeArea(
         child: Column(children: [
+          // ── NURVA Header ──
           Container(
             padding: const EdgeInsets.fromLTRB(16, 14, 16, 12),
             decoration: BoxDecoration(
               gradient: LinearGradient(
                   colors: isDark
-                      ? [const Color(0xFF161B22), const Color(0xFF0D1117)]
-                      : [const Color(0xFFFAF3E0), const Color(0xFFEDE3D0)],
+                      ? [kNurvaNavy, kNurvaNavyDark]
+                      : [kNurvaCream, kNurvaCreamDark],
                   begin: Alignment.topLeft,
                   end: Alignment.bottomRight),
               border: Border(
-                  bottom: BorderSide(color: gold.withOpacity(0.2), width: 0.5)),
+                  bottom: BorderSide(
+                      color: kNurvaGold.withOpacity(0.2), width: 0.5)),
             ),
             child: Row(children: [
               Expanded(
                   child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                    Text('بسم الله الرحمن الرحيم',
-                        style: GoogleFonts.notoNaskhArabic(
-                            fontSize: 16, color: gold),
-                        textDirection: TextDirection.rtl),
+                    Row(children: [
+                      _NurvaLogoIcon(size: 30),
+                      const SizedBox(width: 8),
+                      Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text('NURVA',
+                                style: GoogleFonts.tajawal(
+                                    fontSize: 18,
+                                    fontWeight: FontWeight.w900,
+                                    color: kNurvaGold,
+                                    letterSpacing: 2)),
+                            Text("KUR'AN-I KERİM",
+                                style: GoogleFonts.tajawal(
+                                    fontSize: 8,
+                                    fontWeight: FontWeight.w600,
+                                    color: kNurvaGold.withOpacity(0.7),
+                                    letterSpacing: 1.5)),
+                          ]),
+                    ]),
                     const SizedBox(height: 2),
-                    Text('Kur\'an-ı Kerim',
-                        style: GoogleFonts.tajawal(
-                            fontSize: 22,
-                            fontWeight: FontWeight.w800,
-                            color: gold)),
                     Text(dateStr,
                         style: TextStyle(
                             fontSize: 11,
                             color: isDark ? Colors.white38 : Colors.black38)),
+                    if (_hijriDate.isNotEmpty)
+                      Text(_hijriDate,
+                          style: TextStyle(
+                              fontSize: 10,
+                              color: kNurvaGold.withOpacity(0.7))),
                   ])),
-              Container(
-                width: 48,
-                height: 48,
-                decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    gradient:
-                        LinearGradient(colors: [gold, gold.withOpacity(0.6)])),
-                child: const Center(
-                    child: Text('🕌', style: TextStyle(fontSize: 24))),
-              ),
+              Text('بسم الله الرحمن الرحيم',
+                  style: GoogleFonts.notoNaskhArabic(
+                      fontSize: 13, color: kNurvaGold),
+                  textDirection: TextDirection.rtl),
             ]),
           ),
           Expanded(
             child: RefreshIndicator(
-              color: gold,
+              color: kNurvaGold,
               onRefresh: () async {
                 await _fetchPrayerTimes();
                 await _loadTodayStatus();
               },
               child: SingleChildScrollView(
                 physics: const AlwaysScrollableScrollPhysics(),
-                padding: const EdgeInsets.fromLTRB(16, 14, 16, 16),
+                padding: const EdgeInsets.fromLTRB(14, 14, 14, 16),
                 child: Column(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
-                      _buildPrayerCard(gold, isDark),
+                      // ── Ana Widget Kartı ──
+                      if (!_loadingPrayer &&
+                          _timings.isNotEmpty &&
+                          _nextPrayer != null)
+                        NurvaWidgetPreviewCard(
+                          timings: _timings,
+                          nextPrayer: _nextPrayer!,
+                          cityName: _cityName,
+                          hijriDate: _hijriDate,
+                          timeUntilNext: _timeUntilNext,
+                        ),
+                      if (_loadingPrayer)
+                        Container(
+                          height: 200,
+                          decoration: BoxDecoration(
+                              borderRadius: BorderRadius.circular(28),
+                              color: isDark ? kNurvaNavy : kNurvaCreamDark),
+                          child: const Center(
+                              child: CircularProgressIndicator(
+                                  color: kNurvaGold, strokeWidth: 2)),
+                        ),
                       const SizedBox(height: 14),
+
+                      // ── Quick Nav ──
+                      NurvaQuickNavCard(
+                        onSureler: () {
+                          final root = context
+                              .findAncestorStateOfType<_RootScreenState>();
+                          root?.setState(() => root._idx = 1);
+                        },
+                        onTesbihat: () {
+                          final root = context
+                              .findAncestorStateOfType<_RootScreenState>();
+                          root?.setState(() => root._idx = 6);
+                        },
+                        onFavorilerim: () {
+                          final root = context
+                              .findAncestorStateOfType<_RootScreenState>();
+                          root?.setState(() => root._idx = 1);
+                        },
+                        onDuaTakvimi: () {
+                          final root = context
+                              .findAncestorStateOfType<_RootScreenState>();
+                          root?.setState(() => root._idx = 4);
+                        },
+                      ),
+                      const SizedBox(height: 14),
+
+                      // ── Geri sayım banner ──
+                      if (!_loadingPrayer &&
+                          _nextPrayer != null &&
+                          _timings.isNotEmpty)
+                        _buildNextPrayerBanner(gold, isDark),
+                      if (!_loadingPrayer && _nextPrayer != null)
+                        const SizedBox(height: 14),
+
                       _buildVerseCard(verse, gold, isDark),
                       const SizedBox(height: 14),
                       _buildHadithCard(hadith, gold, isDark),
@@ -2253,7 +2870,7 @@ class _HomeScreenState extends State<HomeScreen> {
                       const SizedBox(height: 14),
                       _buildIslamicDaysCard(gold, isDark),
                       const SizedBox(height: 14),
-                      _buildWidgetCard(gold, isDark),
+                      _buildWidgetInfoCard(gold, isDark),
                       const SizedBox(height: 14),
                       const NativeAdCard(),
                     ]),
@@ -2266,134 +2883,51 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  Widget _buildPrayerCard(Color gold, bool isDark) {
+  Widget _buildNextPrayerBanner(Color gold, bool isDark) {
+    final pColor = kPrayerColors[_nextPrayer] ?? gold;
     return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
       decoration: BoxDecoration(
         gradient: LinearGradient(
-            colors: isDark
-                ? [const Color(0xFF1A2332), const Color(0xFF161B22)]
-                : [const Color(0xFFFAF3E0), const Color(0xFFEDE3D0)],
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight),
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: gold.withOpacity(0.3)),
+            colors: [pColor.withOpacity(0.9), pColor.withOpacity(0.6)],
+            begin: Alignment.centerLeft,
+            end: Alignment.centerRight),
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: [
+          BoxShadow(
+              color: pColor.withOpacity(0.3),
+              blurRadius: 12,
+              offset: const Offset(0, 4))
+        ],
       ),
-      child: Column(children: [
-        Padding(
-          padding: const EdgeInsets.fromLTRB(16, 14, 16, 8),
-          child: Row(children: [
-            Icon(Icons.access_time, color: gold, size: 18),
-            const SizedBox(width: 8),
-            Text(L.prayerTimes,
-                style: TextStyle(
-                    fontSize: 14, fontWeight: FontWeight.w700, color: gold)),
-            const Spacer(),
-            if (_cityName.isNotEmpty)
-              Row(children: [
-                Icon(Icons.location_on, size: 12, color: gold),
-                const SizedBox(width: 2),
-                Text(_cityName,
-                    style: TextStyle(
-                        fontSize: 11,
-                        color: isDark ? Colors.white54 : Colors.black54)),
-              ]),
-          ]),
-        ),
-        if (!_loadingPrayer && _nextPrayer != null && _timings.isNotEmpty)
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 14),
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-              decoration: BoxDecoration(
-                color: (kPrayerColors[_nextPrayer] ?? gold).withOpacity(0.15),
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(
-                    color:
-                        (kPrayerColors[_nextPrayer] ?? gold).withOpacity(0.4)),
-              ),
-              child: Row(children: [
-                Icon(kPrayerIcons[_nextPrayer] ?? Icons.access_time,
-                    color: kPrayerColors[_nextPrayer] ?? gold, size: 22),
-                const SizedBox(width: 10),
-                Expanded(
-                    child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                      Text(L.nextPrayer,
-                          style: TextStyle(
-                              fontSize: 10,
-                              color: isDark ? Colors.white54 : Colors.black54)),
-                      Text(_prayerLocal(_nextPrayer!),
-                          style: TextStyle(
-                              fontSize: 16,
-                              fontWeight: FontWeight.w800,
-                              color: kPrayerColors[_nextPrayer] ?? gold)),
-                    ])),
-                Column(crossAxisAlignment: CrossAxisAlignment.end, children: [
-                  Text(_timings[_nextPrayer] ?? '--:--',
-                      style: TextStyle(
-                          fontSize: 20,
-                          fontWeight: FontWeight.w900,
-                          color: kPrayerColors[_nextPrayer] ?? gold)),
-                  if (_timeUntilNext != null)
-                    Text(_formatDuration(_timeUntilNext!),
-                        style: TextStyle(
-                            fontSize: 11,
-                            color: isDark ? Colors.white54 : Colors.black54)),
-                ]),
-              ]),
-            ),
-          ),
-        const SizedBox(height: 10),
-        if (!_loadingPrayer && _timings.isNotEmpty)
-          Padding(
-            padding: const EdgeInsets.fromLTRB(14, 0, 14, 14),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: kMainPrayerKeys.map((key) {
-                final isNext = key == _nextPrayer;
-                final pColor = kPrayerColors[key] ?? gold;
-                return Expanded(
-                    child: Column(children: [
-                  Text(_prayerLocal(key),
-                      style: TextStyle(
-                          fontSize: 9,
-                          fontWeight: FontWeight.w600,
-                          color: isNext
-                              ? pColor
-                              : (isDark ? Colors.white54 : Colors.black54))),
-                  const SizedBox(height: 4),
-                  Container(
-                    padding:
-                        const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
-                    decoration: BoxDecoration(
-                      color: isNext
-                          ? pColor.withOpacity(0.15)
-                          : Colors.transparent,
-                      borderRadius: BorderRadius.circular(6),
-                      border: isNext
-                          ? Border.all(color: pColor.withOpacity(0.4))
-                          : null,
-                    ),
-                    child: Text(_timings[key] ?? '--:--',
-                        style: TextStyle(
-                            fontSize: 11,
-                            fontWeight:
-                                isNext ? FontWeight.w800 : FontWeight.w600,
-                            color: isNext
-                                ? pColor
-                                : (isDark ? Colors.white70 : Colors.black87)),
-                        textAlign: TextAlign.center),
-                  ),
-                ]));
-              }).toList(),
-            ),
-          ),
-        if (_loadingPrayer)
-          const Padding(
-              padding: EdgeInsets.all(16),
-              child: CircularProgressIndicator(
-                  color: Color(0xFFC9A84C), strokeWidth: 2)),
+      child: Row(children: [
+        Icon(kPrayerIcons[_nextPrayer] ?? Icons.access_time,
+            color: Colors.white, size: 20),
+        const SizedBox(width: 10),
+        Expanded(
+            child:
+                Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Text(L.nextPrayer,
+              style: const TextStyle(
+                  color: Colors.white70,
+                  fontSize: 10,
+                  fontWeight: FontWeight.w600)),
+          Text(_prayerLocal(_nextPrayer!),
+              style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 16,
+                  fontWeight: FontWeight.w800)),
+        ])),
+        Column(crossAxisAlignment: CrossAxisAlignment.end, children: [
+          Text(_timings[_nextPrayer] ?? '--:--',
+              style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 22,
+                  fontWeight: FontWeight.w900)),
+          if (_timeUntilNext != null)
+            Text(_formatDuration(_timeUntilNext!),
+                style: const TextStyle(color: Colors.white70, fontSize: 11)),
+        ]),
       ]),
     );
   }
@@ -2402,7 +2936,7 @@ class _HomeScreenState extends State<HomeScreen> {
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-          color: isDark ? const Color(0xFF161B22) : Colors.white,
+          color: isDark ? kNurvaNavy : Colors.white,
           borderRadius: BorderRadius.circular(16),
           border: Border.all(color: gold.withOpacity(0.25))),
       child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
@@ -2426,8 +2960,7 @@ class _HomeScreenState extends State<HomeScreen> {
             style: GoogleFonts.notoNaskhArabic(
                 fontSize: 22,
                 height: 1.8,
-                color:
-                    isDark ? const Color(0xFFE6EDF3) : const Color(0xFF1A1A2E)),
+                color: isDark ? const Color(0xFFE6EDF3) : kNurvaNavyDark),
             textAlign: TextAlign.center,
             textDirection: TextDirection.rtl),
         const SizedBox(height: 10),
@@ -2489,7 +3022,7 @@ class _HomeScreenState extends State<HomeScreen> {
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-          color: isDark ? const Color(0xFF161B22) : Colors.white,
+          color: isDark ? kNurvaNavy : Colors.white,
           borderRadius: BorderRadius.circular(16),
           border: Border.all(
               color: isDark
@@ -2551,8 +3084,8 @@ class _HomeScreenState extends State<HomeScreen> {
       decoration: BoxDecoration(
         gradient: LinearGradient(
             colors: isDark
-                ? [const Color(0xFF1A2332), const Color(0xFF161B22)]
-                : [const Color(0xFFFAF3E0), const Color(0xFFEDE3D0)]),
+                ? [const Color(0xFF1A2332), kNurvaNavy]
+                : [kNurvaCream, kNurvaCreamDark]),
         borderRadius: BorderRadius.circular(16),
         border: Border.all(color: gold.withOpacity(0.2)),
       ),
@@ -2633,7 +3166,7 @@ class _HomeScreenState extends State<HomeScreen> {
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-          color: isDark ? const Color(0xFF161B22) : Colors.white,
+          color: isDark ? kNurvaNavy : Colors.white,
           borderRadius: BorderRadius.circular(16),
           border: Border.all(
               color: isDark
@@ -2668,22 +3201,36 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  Widget _buildWidgetCard(Color gold, bool isDark) {
+  Widget _buildWidgetInfoCard(Color gold, bool isDark) {
     return Container(
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
-          color: gold.withOpacity(0.08),
-          borderRadius: BorderRadius.circular(14),
-          border: Border.all(color: gold.withOpacity(0.25))),
+        gradient: LinearGradient(
+            colors: isDark
+                ? [kNurvaNavy, kNurvaNavyDark]
+                : [kNurvaCream, kNurvaCreamDark]),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: kNurvaGold.withOpacity(0.3)),
+      ),
       child: Row(children: [
-        const Text('🔲 ', style: TextStyle(fontSize: 22)),
-        const SizedBox(width: 10),
+        Container(
+            width: 44,
+            height: 44,
+            decoration: const BoxDecoration(
+                shape: BoxShape.circle,
+                gradient:
+                    LinearGradient(colors: [kNurvaGold, kNurvaGoldLight])),
+            child: const Center(
+                child: Text('🔲', style: TextStyle(fontSize: 20)))),
+        const SizedBox(width: 12),
         Expanded(
             child:
                 Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          Text(L.widgetInfo,
-              style: TextStyle(
-                  fontSize: 12, fontWeight: FontWeight.w700, color: gold)),
+          Text('NURVA Widget',
+              style: GoogleFonts.tajawal(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w700,
+                  color: kNurvaGold)),
           Text(L.widgetDesc,
               style: TextStyle(
                   fontSize: 10,
@@ -2693,8 +3240,8 @@ class _HomeScreenState extends State<HomeScreen> {
         const SizedBox(width: 8),
         ElevatedButton(
           style: ElevatedButton.styleFrom(
-              backgroundColor: gold,
-              foregroundColor: Colors.black,
+              backgroundColor: kNurvaGold,
+              foregroundColor: kNurvaNavyDark,
               padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
               shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(8)),
@@ -2702,7 +3249,7 @@ class _HomeScreenState extends State<HomeScreen> {
                   const TextStyle(fontSize: 11, fontWeight: FontWeight.w700)),
           onPressed: () => ScaffoldMessenger.of(context).showSnackBar(
               const SnackBar(
-                  content: Text('Ana ekrana uzun basıp widget ekleyin!'),
+                  content: Text('Ana ekrana uzun basıp NURVA widget ekleyin!'),
                   duration: Duration(seconds: 2))),
           child: const Text('Ekle'),
         ),
@@ -3070,7 +3617,6 @@ class _SurahDetailScreenState extends State<SurahDetailScreen> {
     super.initState();
     _fetchSurah();
     _loadBookmarks();
-
     _player.playerStateStream.listen((s) {
       if (mounted)
         setState(() {
@@ -3079,7 +3625,6 @@ class _SurahDetailScreenState extends State<SurahDetailScreen> {
               s.processingState == ProcessingState.buffering;
         });
     });
-
     _player.processingStateStream.listen((ps) {
       if (ps == ProcessingState.completed) {
         final next = _playingIdx + 1;
@@ -3114,12 +3659,10 @@ class _SurahDetailScreenState extends State<SurahDetailScreen> {
           'https://api.alquran.cloud/v1/surah/${widget.surah.number}/quran-uthmani';
       final transUrl =
           'https://api.alquran.cloud/v1/surah/${widget.surah.number}/${widget.translation}';
-
       final results = await Future.wait([
         http.get(Uri.parse(arabicUrl)).timeout(const Duration(seconds: 20)),
         http.get(Uri.parse(transUrl)).timeout(const Duration(seconds: 20)),
       ]);
-
       final arabicData = (jsonDecode(results[0].body)
           as Map<String, dynamic>)['data'] as Map<String, dynamic>;
       final arabicAyahs = arabicData['ayahs'] as List;
@@ -3129,7 +3672,6 @@ class _SurahDetailScreenState extends State<SurahDetailScreen> {
             as Map<String, dynamic>)['data'] as Map<String, dynamic>;
         transAyahs = transData['ayahs'] as List;
       }
-
       final verses = <Map<String, dynamic>>[];
       for (int i = 0; i < arabicAyahs.length; i++) {
         final a = arabicAyahs[i] as Map<String, dynamic>;
@@ -3146,7 +3688,6 @@ class _SurahDetailScreenState extends State<SurahDetailScreen> {
         });
         _ayahKeys[i] = GlobalKey();
       }
-
       if (mounted) {
         setState(() {
           _verses = verses;
@@ -3187,7 +3728,6 @@ class _SurahDetailScreenState extends State<SurahDetailScreen> {
       await _player.play();
       return;
     }
-
     setState(() {
       _playingIdx = idx;
       _isLoadingAudio = true;
@@ -3231,8 +3771,7 @@ class _SurahDetailScreenState extends State<SurahDetailScreen> {
           content:
               Text(isBookmarked ? 'Yer imi kaldırıldı' : 'Yer imine eklendi ✓'),
           duration: const Duration(seconds: 1),
-          backgroundColor:
-              isBookmarked ? Colors.grey : const Color(0xFFC9A84C)));
+          backgroundColor: isBookmarked ? Colors.grey : kNurvaGold));
   }
 
   @override
@@ -3255,8 +3794,7 @@ class _SurahDetailScreenState extends State<SurahDetailScreen> {
                   _showTranslation ? Icons.translate : Icons.translate_outlined,
                   color: gold),
               onPressed: () =>
-                  setState(() => _showTranslation = !_showTranslation),
-              tooltip: 'Meal'),
+                  setState(() => _showTranslation = !_showTranslation)),
           IconButton(
               icon: const Icon(Icons.text_decrease, size: 20),
               onPressed: () =>
@@ -3303,19 +3841,12 @@ class _SurahDetailScreenState extends State<SurahDetailScreen> {
                     padding: const EdgeInsets.symmetric(
                         vertical: 14, horizontal: 20),
                     decoration: BoxDecoration(
-                      gradient: LinearGradient(
-                          colors: isDark
-                              ? [
-                                  const Color(0xFF1A2332),
-                                  const Color(0xFF161B22)
-                                ]
-                              : [
-                                  const Color(0xFFFAF3E0),
-                                  const Color(0xFFEDE3D0)
-                                ]),
-                      border: Border(
-                          bottom: BorderSide(color: gold.withOpacity(0.2))),
-                    ),
+                        gradient: LinearGradient(
+                            colors: isDark
+                                ? [const Color(0xFF1A2332), kNurvaNavy]
+                                : [kNurvaCream, kNurvaCreamDark]),
+                        border: Border(
+                            bottom: BorderSide(color: gold.withOpacity(0.2)))),
                     child: Column(children: [
                       Text(widget.surah.name,
                           style: GoogleFonts.notoNaskhArabic(
@@ -3392,9 +3923,7 @@ class _SurahDetailScreenState extends State<SurahDetailScreen> {
                         decoration: BoxDecoration(
                           color: isPlaying
                               ? gold.withOpacity(0.06)
-                              : (isDark
-                                  ? const Color(0xFF161B22)
-                                  : Colors.white),
+                              : (isDark ? kNurvaNavy : Colors.white),
                           borderRadius: BorderRadius.circular(16),
                           border: Border.all(
                               color: isPlaying
@@ -3471,29 +4000,28 @@ class _SurahDetailScreenState extends State<SurahDetailScreen> {
                                     GestureDetector(
                                       onTap: () => _playVerse(i),
                                       child: Container(
-                                        width: 32,
-                                        height: 32,
-                                        decoration: BoxDecoration(
-                                            shape: BoxShape.circle,
-                                            color: isPlaying
-                                                ? gold
-                                                : gold.withOpacity(0.12)),
-                                        child: isPlaying && _isLoadingAudio
-                                            ? const Padding(
-                                                padding: EdgeInsets.all(7),
-                                                child:
-                                                    CircularProgressIndicator(
-                                                        color: Colors.white,
-                                                        strokeWidth: 2))
-                                            : Icon(
-                                                isPlaying && _isPlaying
-                                                    ? Icons.pause
-                                                    : Icons.play_arrow,
-                                                color: isPlaying
-                                                    ? Colors.white
-                                                    : gold,
-                                                size: 18),
-                                      ),
+                                          width: 32,
+                                          height: 32,
+                                          decoration: BoxDecoration(
+                                              shape: BoxShape.circle,
+                                              color: isPlaying
+                                                  ? gold
+                                                  : gold.withOpacity(0.12)),
+                                          child: isPlaying && _isLoadingAudio
+                                              ? const Padding(
+                                                  padding: EdgeInsets.all(7),
+                                                  child:
+                                                      CircularProgressIndicator(
+                                                          color: Colors.white,
+                                                          strokeWidth: 2))
+                                              : Icon(
+                                                  isPlaying && _isPlaying
+                                                      ? Icons.pause
+                                                      : Icons.play_arrow,
+                                                  color: isPlaying
+                                                      ? Colors.white
+                                                      : gold,
+                                                  size: 18)),
                                     ),
                                   ]),
                                   const SizedBox(height: 12),
@@ -3567,7 +4095,6 @@ class _BookmarksTabState extends State<BookmarksTab> {
   Widget build(BuildContext context) {
     final gold = Theme.of(context).colorScheme.primary;
     final isDark = Theme.of(context).brightness == Brightness.dark;
-
     if (_bookmarks.isEmpty)
       return Center(
           child: Column(mainAxisSize: MainAxisSize.min, children: [
@@ -3581,7 +4108,6 @@ class _BookmarksTabState extends State<BookmarksTab> {
             style: TextStyle(
                 fontSize: 12, color: isDark ? Colors.white24 : Colors.black26)),
       ]));
-
     return Column(children: [
       Padding(
           padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
@@ -3698,7 +4224,7 @@ class _BookmarksTabState extends State<BookmarksTab> {
 }
 
 // ─────────────────────────────────────────────
-//  NAMAZ VAKİTLERİ EKRANI — Profesyonel
+//  NAMAZ VAKİTLERİ EKRANI
 // ─────────────────────────────────────────────
 class PrayerTimesScreen extends StatefulWidget {
   const PrayerTimesScreen({super.key});
@@ -3731,8 +4257,6 @@ class _PrayerTimesScreenState extends State<PrayerTimesScreen>
   String? _lastPlayedKey;
   Timer? _prayerCheckTimer;
   String _hijriDate = '';
-
-  // Haftalık vakitler (önümüzdeki 7 gün)
   List<Map<String, dynamic>> _weeklyTimes = [];
   bool _loadingWeekly = false;
 
@@ -3846,6 +4370,9 @@ class _PrayerTimesScreenState extends State<PrayerTimesScreen>
             _countryName = pm.first.country ?? '';
           }
         } catch (_) {}
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.setDouble('last_lat', pos.latitude);
+        await prefs.setDouble('last_lon', pos.longitude);
         data = await PrayerTimesService().fetchByCoords(
             lat: pos.latitude, lon: pos.longitude, method: _method);
       } else {
@@ -3860,15 +4387,12 @@ class _PrayerTimesScreenState extends State<PrayerTimesScreen>
       final timings = PrayerTimesService().extractTimings(data);
       final nextPrayer = PrayerTimesService().getNextPrayer(timings);
       final dur = PrayerTimesService().timeUntilNext(timings);
-
-      // Hicri tarih
       try {
         final hijri = data['date']?['hijri'];
         if (hijri != null)
           _hijriDate =
               '${hijri['day']} ${hijri['month']?['en']} ${hijri['year']} H';
       } catch (_) {}
-
       if (mounted)
         setState(() {
           _timings = timings;
@@ -3879,26 +4403,22 @@ class _PrayerTimesScreenState extends State<PrayerTimesScreen>
         });
 
       await NotificationService().schedulePrayerNotifications(
-        times: timings,
-        cityName:
-            '$_cityName${_countryName.isNotEmpty ? ", $_countryName" : ""}',
-        adhanEnabled: _adhanEnabled,
-        notificationsEnabled: _notificationsEnabled,
-        reminderEnabled: _reminderEnabled,
-      );
+          times: timings,
+          cityName:
+              '$_cityName${_countryName.isNotEmpty ? ", $_countryName" : ""}',
+          adhanEnabled: _adhanEnabled,
+          notificationsEnabled: _notificationsEnabled,
+          reminderEnabled: _reminderEnabled);
 
       if (nextPrayer != null) {
         await HomeWidgetService.updatePrayerWidget(
-          nextPrayer: _prayerLocal(nextPrayer),
-          nextTime: timings[nextPrayer] ?? '--:--',
-          cityName: _cityName,
-          allTimes: timings,
-          countdownStr: dur != null ? _formatDur(dur) : '',
-          hijriDate: _hijriDate,
-        );
+            nextPrayer: _prayerLocal(nextPrayer),
+            nextTime: timings[nextPrayer] ?? '--:--',
+            cityName: _cityName,
+            allTimes: timings,
+            countdownStr: dur != null ? _formatDur(dur) : '',
+            hijriDate: _hijriDate);
       }
-
-      // Haftalık vakitler yükle
       _fetchWeeklyTimes();
     } catch (e) {
       if (mounted)
@@ -3917,16 +4437,13 @@ class _PrayerTimesScreenState extends State<PrayerTimesScreen>
       final prefs = await SharedPreferences.getInstance();
       final method = prefs.getInt('prayer_method') ?? 13;
       final weekly = <Map<String, dynamic>>[];
-
       for (int i = 0; i < 7; i++) {
         final date = now.add(Duration(days: i));
         try {
           Map<String, dynamic> data;
           if (_useGPS && _timings.isNotEmpty) {
-            // GPS koordinatlarını tekrar kullan
-            final pref = await SharedPreferences.getInstance();
-            final lat = pref.getDouble('last_lat') ?? 41.0;
-            final lon = pref.getDouble('last_lon') ?? 29.0;
+            final lat = prefs.getDouble('last_lat') ?? 41.0;
+            final lon = prefs.getDouble('last_lon') ?? 29.0;
             data = await PrayerTimesService()
                 .fetchByCoords(lat: lat, lon: lon, method: method, date: date);
           } else {
@@ -3949,7 +4466,6 @@ class _PrayerTimesScreenState extends State<PrayerTimesScreen>
           });
         } catch (_) {}
       }
-
       if (mounted)
         setState(() {
           _weeklyTimes = weekly;
@@ -3981,7 +4497,15 @@ class _PrayerTimesScreenState extends State<PrayerTimesScreen>
     final gold = Theme.of(context).colorScheme.primary;
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final now = DateTime.now();
-    const weekdays = ['Pzt', 'Sal', 'Çar', 'Per', 'Cum', 'Cmt', 'Paz'];
+    const weekdays = [
+      'Pazartesi',
+      'Salı',
+      'Çarşamba',
+      'Perşembe',
+      'Cuma',
+      'Cumartesi',
+      'Pazar'
+    ];
     const months = [
       'Ocak',
       'Şubat',
@@ -4020,8 +4544,8 @@ class _PrayerTimesScreenState extends State<PrayerTimesScreen>
       decoration: BoxDecoration(
         gradient: LinearGradient(
             colors: isDark
-                ? [const Color(0xFF161B22), const Color(0xFF0D1117)]
-                : [const Color(0xFFFAF3E0), const Color(0xFFEDE3D0)],
+                ? [kNurvaNavy, kNurvaNavyDark]
+                : [kNurvaCream, kNurvaCreamDark],
             begin: Alignment.topLeft,
             end: Alignment.bottomRight),
         border: Border(
@@ -4061,8 +4585,7 @@ class _PrayerTimesScreenState extends State<PrayerTimesScreen>
             IconButton(
                 icon: Icon(_adhanPlaying ? Icons.stop : Icons.volume_up,
                     color: _adhanPlaying ? Colors.red : gold, size: 22),
-                onPressed: _adhanPlaying ? _stopAdhan : _playAdhan,
-                tooltip: _adhanPlaying ? 'Ezanı Durdur' : 'Ezan Dinle'),
+                onPressed: _adhanPlaying ? _stopAdhan : _playAdhan),
           IconButton(
               icon: Icon(
                   _notificationsEnabled
@@ -4091,6 +4614,14 @@ class _PrayerTimesScreenState extends State<PrayerTimesScreen>
         padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
         child:
             Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+          if (_nextPrayer != null && _timings.isNotEmpty)
+            NurvaWidgetPreviewCard(
+                timings: _timings,
+                nextPrayer: _nextPrayer!,
+                cityName: _cityName,
+                hijriDate: _hijriDate,
+                timeUntilNext: _timeUntilNext),
+          const SizedBox(height: 16),
           if (_nextPrayer != null) _buildNextCard(gold, isDark),
           const SizedBox(height: 16),
           _buildTimesList(gold, isDark),
@@ -4182,7 +4713,7 @@ class _PrayerTimesScreenState extends State<PrayerTimesScreen>
         kAllPrayerKeys.where((k) => _timings.containsKey(k)).toList();
     return Container(
       decoration: BoxDecoration(
-          color: isDark ? const Color(0xFF161B22) : Colors.white,
+          color: isDark ? kNurvaNavy : Colors.white,
           borderRadius: BorderRadius.circular(16),
           border: Border.all(
               color: isDark
@@ -4200,11 +4731,10 @@ class _PrayerTimesScreenState extends State<PrayerTimesScreen>
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 13),
             decoration: BoxDecoration(
-              color: isNext ? pColor.withOpacity(0.08) : Colors.transparent,
-              borderRadius: BorderRadius.vertical(
-                  top: i == 0 ? const Radius.circular(16) : Radius.zero,
-                  bottom: isLast ? const Radius.circular(16) : Radius.zero),
-            ),
+                color: isNext ? pColor.withOpacity(0.08) : Colors.transparent,
+                borderRadius: BorderRadius.vertical(
+                    top: i == 0 ? const Radius.circular(16) : Radius.zero,
+                    bottom: isLast ? const Radius.circular(16) : Radius.zero)),
             child: Row(children: [
               Container(
                   width: 36,
@@ -4238,7 +4768,7 @@ class _PrayerTimesScreenState extends State<PrayerTimesScreen>
                                 style: TextStyle(
                                     fontSize: 9,
                                     color: pColor,
-                                    fontWeight: FontWeight.w700))),
+                                    fontWeight: FontWeight.w700)))
                       ],
                     ]),
                     if (!isMain)
@@ -4297,7 +4827,7 @@ class _PrayerTimesScreenState extends State<PrayerTimesScreen>
     return Container(
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
-          color: isDark ? const Color(0xFF161B22) : Colors.white,
+          color: isDark ? kNurvaNavy : Colors.white,
           borderRadius: BorderRadius.circular(14),
           border: Border.all(
               color: isDark
@@ -4313,7 +4843,7 @@ class _PrayerTimesScreenState extends State<PrayerTimesScreen>
                     '${hijri['day']} ${hijri['month']?['en']} ${hijri['year']} H  •  ${gregorian?['date'] ?? ''}',
                     style: TextStyle(
                         fontSize: 12,
-                        color: isDark ? Colors.white60 : Colors.black54))),
+                        color: isDark ? Colors.white60 : Colors.black54)))
           ]),
         if (methodData != null) ...[
           const SizedBox(height: 6),
@@ -4325,18 +4855,17 @@ class _PrayerTimesScreenState extends State<PrayerTimesScreen>
                     style: TextStyle(
                         fontSize: 11,
                         color: isDark ? Colors.white38 : Colors.black38),
-                    overflow: TextOverflow.ellipsis)),
+                    overflow: TextOverflow.ellipsis))
           ]),
         ],
       ]),
     );
   }
 
-  // ── Haftalık Vakitler ─────────────────────
   Widget _buildWeeklyCard(Color gold, bool isDark) {
     return Container(
       decoration: BoxDecoration(
-          color: isDark ? const Color(0xFF161B22) : Colors.white,
+          color: isDark ? kNurvaNavy : Colors.white,
           borderRadius: BorderRadius.circular(16),
           border: Border.all(
               color: isDark
@@ -4344,15 +4873,14 @@ class _PrayerTimesScreenState extends State<PrayerTimesScreen>
                   : Colors.black.withOpacity(0.06))),
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
         Padding(
-          padding: const EdgeInsets.fromLTRB(16, 14, 16, 10),
-          child: Row(children: [
-            Icon(Icons.date_range, color: gold, size: 18),
-            const SizedBox(width: 8),
-            Text('Haftalık Vakitler',
-                style: TextStyle(
-                    fontSize: 14, fontWeight: FontWeight.w700, color: gold)),
-          ]),
-        ),
+            padding: const EdgeInsets.fromLTRB(16, 14, 16, 10),
+            child: Row(children: [
+              Icon(Icons.date_range, color: gold, size: 18),
+              const SizedBox(width: 8),
+              Text('Haftalık Vakitler',
+                  style: TextStyle(
+                      fontSize: 14, fontWeight: FontWeight.w700, color: gold)),
+            ])),
         SingleChildScrollView(
           scrollDirection: Axis.horizontal,
           padding: const EdgeInsets.fromLTRB(12, 0, 12, 14),
@@ -4373,9 +4901,7 @@ class _PrayerTimesScreenState extends State<PrayerTimesScreen>
                     : null,
                 color: isToday
                     ? null
-                    : (isDark
-                        ? const Color(0xFF21262D)
-                        : const Color(0xFFF8F5F0)),
+                    : (isDark ? const Color(0xFF21262D) : kNurvaCream),
                 borderRadius: BorderRadius.circular(12),
                 border: Border.all(
                     color: isToday
@@ -4402,19 +4928,18 @@ class _PrayerTimesScreenState extends State<PrayerTimesScreen>
                     ...kMainPrayerKeys.map((key) {
                       final pColor = kPrayerColors[key] ?? gold;
                       return Padding(
-                        padding: const EdgeInsets.only(bottom: 3),
-                        child: Row(children: [
-                          Icon(kPrayerIcons[key], size: 9, color: pColor),
-                          const SizedBox(width: 4),
-                          Text(timings[key] ?? '--:--',
-                              style: TextStyle(
-                                  fontSize: 9,
-                                  fontWeight: FontWeight.w600,
-                                  color: isDark
-                                      ? Colors.white70
-                                      : Colors.black87)),
-                        ]),
-                      );
+                          padding: const EdgeInsets.only(bottom: 3),
+                          child: Row(children: [
+                            Icon(kPrayerIcons[key], size: 9, color: pColor),
+                            const SizedBox(width: 4),
+                            Text(timings[key] ?? '--:--',
+                                style: TextStyle(
+                                    fontSize: 9,
+                                    fontWeight: FontWeight.w600,
+                                    color: isDark
+                                        ? Colors.white70
+                                        : Colors.black87)),
+                          ]));
                     }),
                   ]),
             );
@@ -4431,8 +4956,8 @@ class _PrayerTimesScreenState extends State<PrayerTimesScreen>
       decoration: BoxDecoration(
           gradient: LinearGradient(
               colors: isDark
-                  ? [const Color(0xFF1A2332), const Color(0xFF161B22)]
-                  : [const Color(0xFFFAF3E0), const Color(0xFFEDE3D0)]),
+                  ? [const Color(0xFF1A2332), kNurvaNavy]
+                  : [kNurvaCream, kNurvaCreamDark]),
           borderRadius: BorderRadius.circular(16),
           border: Border.all(color: gold.withOpacity(0.2))),
       child: Column(children: [
@@ -4445,7 +4970,7 @@ class _PrayerTimesScreenState extends State<PrayerTimesScreen>
           const Spacer(),
           Text('$done/5',
               style: TextStyle(
-                  fontSize: 16, fontWeight: FontWeight.w800, color: gold)),
+                  fontSize: 16, fontWeight: FontWeight.w800, color: gold))
         ]),
         const SizedBox(height: 12),
         Row(
@@ -4643,7 +5168,7 @@ class _PrayerTimesScreenState extends State<PrayerTimesScreen>
                       const SizedBox(width: 8),
                       Expanded(
                           child: Text(
-                              'Tam vakitte ezan otomatik çalar. Bildirim sesini telefon ayarlarından değiştirebilirsiniz.',
+                              'Uygulama kapalı olsa bile namaz vakitlerinde ezan otomatik çalar (Android bildirim kanalı üzerinden).',
                               style: TextStyle(
                                   fontSize: 11, color: gold.withOpacity(0.8)))),
                     ])),
@@ -4888,8 +5413,8 @@ class _DailyScreenState extends State<DailyScreen> {
       decoration: BoxDecoration(
           gradient: LinearGradient(
               colors: isDark
-                  ? [const Color(0xFF1A2332), const Color(0xFF161B22)]
-                  : [const Color(0xFFFAF3E0), const Color(0xFFEDE3D0)],
+                  ? [const Color(0xFF1A2332), kNurvaNavy]
+                  : [kNurvaCream, kNurvaCreamDark],
               begin: Alignment.topLeft,
               end: Alignment.bottomRight),
           borderRadius: BorderRadius.circular(20),
@@ -4909,15 +5434,14 @@ class _DailyScreenState extends State<DailyScreen> {
                   borderRadius: BorderRadius.circular(6)),
               child: Text(verse['ref'] ?? '',
                   style: TextStyle(
-                      fontSize: 10, color: gold, fontWeight: FontWeight.w600))),
+                      fontSize: 10, color: gold, fontWeight: FontWeight.w600)))
         ]),
         const SizedBox(height: 16),
         Text(verse['ar'] ?? '',
             style: GoogleFonts.notoNaskhArabic(
                 fontSize: 26,
                 height: 1.8,
-                color:
-                    isDark ? const Color(0xFFE6EDF3) : const Color(0xFF1A1A2E)),
+                color: isDark ? const Color(0xFFE6EDF3) : kNurvaNavyDark),
             textAlign: TextAlign.center,
             textDirection: TextDirection.rtl),
         const SizedBox(height: 12),
@@ -4984,7 +5508,7 @@ class _DailyScreenState extends State<DailyScreen> {
     return Container(
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
-          color: isDark ? const Color(0xFF161B22) : Colors.white,
+          color: isDark ? kNurvaNavy : Colors.white,
           borderRadius: BorderRadius.circular(20),
           border: Border.all(
               color: isDark
@@ -5005,7 +5529,7 @@ class _DailyScreenState extends State<DailyScreen> {
                   borderRadius: BorderRadius.circular(6)),
               child: Text(hadith['src'] ?? '',
                   style: TextStyle(
-                      fontSize: 10, color: gold, fontWeight: FontWeight.w600))),
+                      fontSize: 10, color: gold, fontWeight: FontWeight.w600)))
         ]),
         const SizedBox(height: 12),
         Text(L.lang == AppLang.en ? (hadith['en'] ?? '') : (hadith['tr'] ?? ''),
@@ -5057,7 +5581,7 @@ class _DailyScreenState extends State<DailyScreen> {
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-          color: isDark ? const Color(0xFF161B22) : Colors.white,
+          color: isDark ? kNurvaNavy : Colors.white,
           borderRadius: BorderRadius.circular(16),
           border: Border.all(
               color: isDark
@@ -5158,7 +5682,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
           Container(
             padding: const EdgeInsets.all(16),
             decoration: BoxDecoration(
-                color: isDark ? const Color(0xFF161B22) : Colors.white,
+                color: isDark ? kNurvaNavy : Colors.white,
                 borderRadius: BorderRadius.circular(14),
                 border: Border.all(
                     color: isDark
@@ -5181,7 +5705,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       height: 1.5)),
               const SizedBox(height: 8),
               Text(
-                  '• Namaz vakitleri widget\'ı\n• Günlük ayet widget\'ı\n\niOS: Ana ekrana uzun basın → Widget ekle → Kur\'an\nAndroid: Ana ekrana uzun basın → Widget → Kur\'an',
+                  '• Namaz vakitleri widget\'ı\n• Günlük ayet widget\'ı\n\niOS: Ana ekrana uzun basın → Widget ekle → NURVA\nAndroid: Ana ekrana uzun basın → Widget → NURVA',
                   style: TextStyle(
                       fontSize: 11,
                       color: isDark ? Colors.white38 : Colors.black38,
@@ -5193,10 +5717,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
               child: Column(children: [
             const Text('🕌', style: TextStyle(fontSize: 30)),
             const SizedBox(height: 6),
-            Text('Kur\'an-ı Kerim',
+            Text('NURVA – Kur\'an-ı Kerim',
                 style: TextStyle(
                     color: gold, fontSize: 14, fontWeight: FontWeight.w700)),
-            Text('v3.2.0 • Tüm hakları saklıdır',
+            Text('v3.4.0 • Tüm hakları saklıdır',
                 style: TextStyle(
                     color: isDark ? Colors.white38 : Colors.black38,
                     fontSize: 11)),
@@ -5375,6 +5899,113 @@ class JuzListTab extends StatelessWidget {
   final String reciter;
   final String translation;
   const JuzListTab(
+      {super.key,
+      required this.surahs,
+      required this.reciter,
+      required this.translation});
+
+  @override
+  Widget build(BuildContext context) {
+    final gold = Theme.of(context).colorScheme.primary;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    if (surahs.isEmpty) return _loadingCenter();
+    return ListView.builder(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      itemCount: 30,
+      itemBuilder: (ctx, i) {
+        final juz = kJuzData[i];
+        final juzNum = juz['juz'] as int;
+        final startSurahN = juz['startSurah'] as int;
+        final startAyah = juz['startAyah'] as int;
+        final endSurahN = juz['endSurah'] as int;
+        final endAyah = juz['endAyah'] as int;
+        final juzName = juz['name'] as String;
+        final startSurah = surahs.firstWhere((s) => s.number == startSurahN,
+            orElse: () => surahs.first);
+        final endSurah = surahs.firstWhere((s) => s.number == endSurahN,
+            orElse: () => surahs.last);
+        return Card(
+          margin: const EdgeInsets.only(bottom: 8),
+          child: InkWell(
+            onTap: () => Navigator.push(
+                ctx,
+                MaterialPageRoute(
+                    builder: (_) => JuzDetailScreen(
+                        juzNumber: juzNum,
+                        startSurah: startSurah,
+                        startAyah: startAyah,
+                        reciter: reciter,
+                        translation: translation,
+                        surahs: surahs))),
+            borderRadius: BorderRadius.circular(14),
+            child: Padding(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                child: Row(children: [
+                  Container(
+                      width: 50,
+                      height: 50,
+                      decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          gradient: LinearGradient(
+                              colors: [gold, gold.withOpacity(0.6)],
+                              begin: Alignment.topLeft,
+                              end: Alignment.bottomRight)),
+                      child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Text('$juzNum',
+                                style: const TextStyle(
+                                    fontSize: 18,
+                                    fontWeight: FontWeight.w800,
+                                    color: Color(0xFF0D1117))),
+                            Text(L.juz,
+                                style: const TextStyle(
+                                    fontSize: 8,
+                                    fontWeight: FontWeight.w700,
+                                    color: Color(0xFF0D1117))),
+                          ])),
+                  const SizedBox(width: 14),
+                  Expanded(
+                      child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                        Text(
+                            '${startSurah.englishName}  –  ${endSurah.englishName}',
+                            style: const TextStyle(
+                                fontSize: 14, fontWeight: FontWeight.w600)),
+                        const SizedBox(height: 3),
+                        Text(
+                            '${startSurah.number}:$startAyah  →  ${endSurah.number}:$endAyah',
+                            style: TextStyle(
+                                fontSize: 11,
+                                color:
+                                    isDark ? Colors.white38 : Colors.black38)),
+                      ])),
+                  Column(crossAxisAlignment: CrossAxisAlignment.end, children: [
+                    Text(juzName,
+                        style: GoogleFonts.notoNaskhArabic(
+                            fontSize: 20, color: gold),
+                        textDirection: TextDirection.rtl),
+                    const SizedBox(height: 4),
+                    Icon(Icons.play_circle_outline, color: gold, size: 22),
+                  ]),
+                ])),
+          ),
+        );
+      },
+    );
+  }
+}
+
+// ─────────────────────────────────────────────
+//  CÜZ LİSTESİ TAB
+// ─────────────────────────────────────────────
+class juzlisttab extends StatelessWidget {
+  final List<SurahMeta> surahs;
+  final String reciter;
+  final String translation;
+  const juzlisttab(
       {super.key,
       required this.surahs,
       required this.reciter,
