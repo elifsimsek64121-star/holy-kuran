@@ -19,8 +19,8 @@ import 'package:timezone/data/latest.dart' as tz;
 import 'package:timezone/timezone.dart' as tz;
 import 'package:vibration/vibration.dart';
 
-// ─────────────────────────────────────────────
-//  BİLDİRİM SERVİSİ  (Düzeltilmiş – 15 dk + kilitli ekran + ezan)
+// // ─────────────────────────────────────────────
+//  BİLDİRİM SERVİSİ  (Düzeltilmiş – ihlalsiz)
 // ─────────────────────────────────────────────
 final FlutterLocalNotificationsPlugin flutterLocalNotificationsPlugin =
     FlutterLocalNotificationsPlugin();
@@ -39,7 +39,6 @@ class NotificationService {
 
   Future<void> initialize() async {
     tz.initializeTimeZones();
-    // Cihazın yerel saat dilimini kullan
     try {
       tz.setLocalLocation(tz.getLocation(tz.local.name));
     } catch (_) {}
@@ -121,7 +120,7 @@ class NotificationService {
             AndroidFlutterLocalNotificationsPlugin>();
     await androidPlugin?.requestNotificationsPermission();
 
-    // Android 12+ Exact Alarm izni (çok kritik!)
+    // Android 12+ Exact Alarm izni
     await androidPlugin?.requestExactAlarmsPermission();
   }
 
@@ -139,7 +138,6 @@ class NotificationService {
     int adhanId = 100;
     int remindId = 200;
 
-    // Bugün + yarın planla (daha güvenilir)
     for (int dayOffset = 0; dayOffset <= 1; dayOffset++) {
       final baseDate = now.add(Duration(days: dayOffset));
 
@@ -154,7 +152,6 @@ class NotificationService {
 
         var dt = DateTime(baseDate.year, baseDate.month, baseDate.day, h, m);
 
-        // Geçmiş saatleri atla (sadece bugün için)
         if (dayOffset == 0 && dt.isBefore(now)) continue;
 
         final tzDt = tz.TZDateTime.from(dt, tz.local);
@@ -178,14 +175,12 @@ class NotificationService {
           ),
           icon: '@mipmap/ic_launcher',
           color: const Color(0xFFC9A84C),
-          fullScreenIntent: true, // Kilitliyken bile açılır
+          fullScreenIntent: false, // izin olmadığı için false
           category: AndroidNotificationCategory.alarm,
           visibility: NotificationVisibility.public,
           ongoing: false,
           autoCancel: true,
-          timeoutAfter: null,
-          audioAttributesUsage:
-              AudioAttributesUsage.alarm, // Alarm sesi olarak çal
+          audioAttributesUsage: AudioAttributesUsage.alarm,
         );
 
         const iosAdhan = DarwinNotificationDetails(
@@ -204,7 +199,6 @@ class NotificationService {
             tzDt,
             NotificationDetails(android: adhanDetails, iOS: iosAdhan),
             androidScheduleMode: AndroidScheduleMode.exactAllowWhileIdle,
-            // matchDateTimeComponents KULLANMA – her seferinde yeniden planlıyoruz
             uiLocalNotificationDateInterpretation:
                 UILocalNotificationDateInterpretation.absoluteTime,
           );
@@ -284,6 +278,17 @@ class NotificationService {
       'Isha': 'Yatsı namazı vakti girdi. Hayırlı namazlar. 🤲',
     };
     return messages[p] ?? 'Namaz vakti girdi.';
+  }
+
+  String _prayerLocal(String p) {
+    const names = {
+      'Fajr': 'Sabah',
+      'Dhuhr': 'Öğle',
+      'Asr': 'İkindi',
+      'Maghrib': 'Akşam',
+      'Isha': 'Yatsı',
+    };
+    return names[p] ?? p;
   }
 }
 
@@ -395,6 +400,130 @@ class BookmarkService {
     return list
         .any((b) => b['surahNum'] == surahNum && b['ayahNum'] == ayahNum);
   }
+}
+
+// ─────────────────────────────────────────────
+//  PREMIUM KİLİT SERVİSİ (Ödüllü reklamla açılan özellikler)
+// ─────────────────────────────────────────────
+class PremiumUnlockService {
+  static const String keyReciters = 'unlock_all_reciters';
+  static const String keyMushafSepia = 'unlock_mushaf_sepia';
+  static const String keyMushafNight = 'unlock_mushaf_night';
+  static const String keyTefsir = 'unlock_tefsir';
+  static const String keyBookmarkExport = 'unlock_bookmark_export';
+  static const String keyZikirUnlimited = 'unlock_zikir_unlimited';
+
+  static Future<bool> isUnlocked(String key) async {
+    final p = await SharedPreferences.getInstance();
+    return p.getBool(key) ?? false;
+  }
+
+  static Future<void> unlock(String key) async {
+    final p = await SharedPreferences.getInstance();
+    await p.setBool(key, true);
+  }
+
+  /// Ödüllü reklam izleterek bir özelliği açan standart diyalog.
+  static void showUnlockDialog(
+    BuildContext context, {
+    required String unlockKey,
+    required String title,
+    required String desc,
+    required VoidCallback onUnlocked,
+  }) {
+    final gold = Theme.of(context).colorScheme.primary;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: isDark ? kNurvaNavy : Colors.white,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+        title: Row(children: [
+          Container(
+            width: 36,
+            height: 36,
+            decoration: BoxDecoration(
+                color: gold.withOpacity(0.15), shape: BoxShape.circle),
+            child: Icon(Icons.lock_open_rounded, color: gold, size: 18),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+              child: Text(title,
+                  style: GoogleFonts.tajawal(
+                      fontSize: 15, fontWeight: FontWeight.w800))),
+        ]),
+        content: Text(desc,
+            style: TextStyle(
+                fontSize: 13,
+                color: isDark ? Colors.white70 : Colors.black54,
+                height: 1.5)),
+        actionsPadding: const EdgeInsets.fromLTRB(16, 0, 16, 14),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(ctx), child: const Text('Vazgeç')),
+          ElevatedButton.icon(
+            icon: const Icon(Icons.play_circle_fill, size: 18),
+            label: const Text('Reklamı İzle, Kilidi Aç',
+                style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700)),
+            style: ElevatedButton.styleFrom(
+                backgroundColor: gold,
+                foregroundColor: Colors.black,
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(10))),
+            onPressed: () {
+              Navigator.pop(ctx);
+              _showLoadingSnack(context);
+              AdManager().showRewardedAd(
+                onReward: () async {
+                  await unlock(unlockKey);
+                  onUnlocked();
+                  if (context.mounted) {
+                    ScaffoldMessenger.of(context)
+                      ..hideCurrentSnackBar()
+                      ..showSnackBar(SnackBar(
+                          backgroundColor: Colors.green.shade700,
+                          content: const Text('🎉 Özellik açıldı!'),
+                          duration: const Duration(seconds: 2)));
+                  }
+                },
+                onFail: () {
+                  if (context.mounted) {
+                    ScaffoldMessenger.of(context)
+                      ..hideCurrentSnackBar()
+                      ..showSnackBar(const SnackBar(
+                          content: Text(
+                              'Reklam şu an hazır değil, birazdan tekrar deneyin.'),
+                          duration: Duration(seconds: 2)));
+                  }
+                },
+              );
+            },
+          ),
+        ],
+      ),
+    );
+  }
+
+  static void _showLoadingSnack(BuildContext context) {
+    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+      content: Row(children: [
+        SizedBox(
+            width: 16,
+            height: 16,
+            child:
+                CircularProgressIndicator(strokeWidth: 2, color: Colors.white)),
+        SizedBox(width: 12),
+        Text('Reklam yükleniyor...'),
+      ]),
+      duration: Duration(seconds: 2),
+    ));
+  }
+
+  /// Bir özelliğin kilidini gösteren küçük rozet.
+  static Widget lockBadge(Color gold) =>
+      Icon(Icons.lock, size: 11, color: gold.withOpacity(0.75));
 }
 
 // ─────────────────────────────────────────────
@@ -617,6 +746,40 @@ class AdManager {
 
   bool get isRewardedReady => _rewardedReady;
 
+  /// Ödüllü reklamı gösterir. Kullanıcı ödülü hak ederse [onReward] çağrılır.
+  /// Reklam hazır değilse ya da gösterilemezse [onFail] çağrılır ve
+  /// arka planda yeni bir reklam yüklenmeye başlanır.
+  Future<void> showRewardedAd({
+    required VoidCallback onReward,
+    VoidCallback? onFail,
+  }) async {
+    if (!_rewardedReady || _rewardedAd == null) {
+      onFail?.call();
+      _loadRewarded();
+      return;
+    }
+    final ad = _rewardedAd!;
+    _rewardedAd = null;
+    _rewardedReady = false;
+    ad.fullScreenContentCallback = FullScreenContentCallback(
+      onAdDismissedFullScreenContent: (a) {
+        a.dispose();
+        _loadRewarded();
+      },
+      onAdFailedToShowFullScreenContent: (a, _) {
+        a.dispose();
+        _loadRewarded();
+        onFail?.call();
+      },
+    );
+    try {
+      await ad.show(onUserEarnedReward: (a, reward) => onReward());
+    } catch (_) {
+      onFail?.call();
+      _loadRewarded();
+    }
+  }
+
   void _loadNative() {
     _nativeAd?.dispose();
     _nativeAd = null;
@@ -705,8 +868,9 @@ class NativeAdCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final adManager = AdManager();
-    if (!adManager.isNativeReady || adManager.nativeAd == null)
+    if (!adManager.isNativeReady || adManager.nativeAd == null) {
       return const SizedBox.shrink();
+    }
     final isDark = Theme.of(context).brightness == Brightness.dark;
     return Container(
       height: 90,
@@ -1722,10 +1886,11 @@ class PrayerTrackerService {
     final now = DateTime.now();
     for (int i = 0; i < 365; i++) {
       final dk = _dk(now.subtract(Duration(days: i)));
-      if (kMainPrayerKeys.every((pr) => p.getBool(_pk(dk, pr)) ?? false))
+      if (kMainPrayerKeys.every((pr) => p.getBool(_pk(dk, pr)) ?? false)) {
         streak++;
-      else
+      } else {
         break;
+      }
     }
     await p.setInt('prayer_streak', streak);
   }
@@ -2052,7 +2217,6 @@ class _RootScreenState extends State<RootScreen> {
 
 // ─────────────────────────────────────────────
 //  NURVA PROFESSIONAL HOME WIDGET CARD
-//  Resme birebir uygun tasarım
 // ─────────────────────────────────────────────
 class NurvaWidgetPreviewCard extends StatelessWidget {
   final Map<String, String> timings;
@@ -2099,7 +2263,6 @@ class NurvaWidgetPreviewCard extends StatelessWidget {
     final dayName = weekdays[now.weekday - 1];
     final dateStr = '${now.day} ${months[now.month - 1]} ${now.year}';
 
-    // Resimde görünen 6 vakit
     final displayKeys = ['Imsak', 'Sunrise', 'Dhuhr', 'Asr', 'Maghrib', 'Isha'];
     final displayLabels = {
       'Imsak': 'İmsak',
@@ -2139,7 +2302,6 @@ class NurvaWidgetPreviewCard extends StatelessWidget {
           child: Row(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              // ── SOL PANEL: NURVA Branding ──
               Expanded(
                 flex: 46,
                 child: Container(
@@ -2154,9 +2316,8 @@ class NurvaWidgetPreviewCard extends StatelessWidget {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      // Logo satırı
                       Row(children: [
-                        _NurvaLogoIcon(size: 40),
+                        const _NurvaLogoIcon(size: 40),
                         const SizedBox(width: 10),
                         Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
@@ -2176,16 +2337,12 @@ class NurvaWidgetPreviewCard extends StatelessWidget {
                             ]),
                       ]),
                       const SizedBox(height: 18),
-
-                      // Başlık
                       Text("KUR'AN-I KERİM",
                           style: GoogleFonts.tajawal(
                               fontSize: 13,
                               fontWeight: FontWeight.w800,
                               color: Colors.white)),
                       const SizedBox(height: 10),
-
-                      // Ayet kutusu — resme uygun
                       Container(
                         padding: const EdgeInsets.symmetric(
                             horizontal: 12, vertical: 11),
@@ -2215,8 +2372,6 @@ class NurvaWidgetPreviewCard extends StatelessWidget {
                             ]),
                       ),
                       const SizedBox(height: 14),
-
-                      // "Kur'an-ı Kerim'i Oku" butonu
                       Container(
                         padding: const EdgeInsets.symmetric(
                             horizontal: 14, vertical: 11),
@@ -2244,8 +2399,6 @@ class NurvaWidgetPreviewCard extends StatelessWidget {
                   ),
                 ),
               ),
-
-              // ── SAĞ PANEL: Namaz Vakitleri ──
               Expanded(
                 flex: 54,
                 child: Container(
@@ -2254,7 +2407,6 @@ class NurvaWidgetPreviewCard extends StatelessWidget {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      // Başlık + Takvim ikonu
                       Row(children: [
                         Text('NAMAZ VAKİTLERİ',
                             style: GoogleFonts.tajawal(
@@ -2282,8 +2434,6 @@ class NurvaWidgetPreviewCard extends StatelessWidget {
                         ),
                       ]),
                       const SizedBox(height: 5),
-
-                      // Şehir + Tarih
                       Row(children: [
                         const Icon(Icons.location_on,
                             size: 12, color: kNurvaNavy),
@@ -2301,8 +2451,6 @@ class NurvaWidgetPreviewCard extends StatelessWidget {
                           style: const TextStyle(
                               fontSize: 9.5, color: Colors.black45)),
                       const SizedBox(height: 12),
-
-                      // Vakit listesi
                       ...displayKeys.map((key) {
                         final label = displayLabels[key] ?? key;
                         final time = timings[key] ?? '--:--';
@@ -2359,7 +2507,7 @@ class NurvaWidgetPreviewCard extends StatelessWidget {
                                     color: kNurvaNavy)),
                           ]),
                         );
-                      }).toList(),
+                      }),
                     ],
                   ),
                 ),
@@ -2396,7 +2544,6 @@ class _NurvaLogoPainter extends CustomPainter {
     final cx = size.width / 2;
     final cy = size.height / 2;
 
-    // Dış daire
     paint.style = PaintingStyle.stroke;
     paint.strokeWidth = 1.5;
     paint.color = kNurvaGold.withOpacity(0.5);
@@ -2404,7 +2551,6 @@ class _NurvaLogoPainter extends CustomPainter {
     paint.style = PaintingStyle.fill;
     paint.color = kNurvaGold;
 
-    // Kubbe
     final domePath = Path();
     domePath.addArc(
         Rect.fromCenter(center: Offset(cx, cy + 2), width: 22, height: 18),
@@ -2413,21 +2559,18 @@ class _NurvaLogoPainter extends CustomPainter {
     domePath.close();
     canvas.drawPath(domePath, paint);
 
-    // Minare sol
     canvas.drawRect(Rect.fromLTWH(cx - 13, cy - 5, 4.5, 15), paint);
     canvas.drawOval(
         Rect.fromCenter(
             center: Offset(cx - 10.75, cy - 6.5), width: 4.5, height: 5.5),
         paint);
 
-    // Minare sağ
     canvas.drawRect(Rect.fromLTWH(cx + 8.5, cy - 5, 4.5, 15), paint);
     canvas.drawOval(
         Rect.fromCenter(
             center: Offset(cx + 10.75, cy - 6.5), width: 4.5, height: 5.5),
         paint);
 
-    // Hilal
     final crescentPaint = Paint()
       ..color = kNurvaGold
       ..style = PaintingStyle.stroke
@@ -2445,7 +2588,7 @@ class _NurvaLogoPainter extends CustomPainter {
 }
 
 // ─────────────────────────────────────────────
-//  NURVA QUICK NAV CARD (Resme uygun)
+//  NURVA QUICK NAV CARD
 // ─────────────────────────────────────────────
 class NurvaQuickNavCard extends StatelessWidget {
   final VoidCallback onSureler;
@@ -2479,7 +2622,6 @@ class NurvaQuickNavCard extends StatelessWidget {
         borderRadius: BorderRadius.circular(22),
         child: Row(
           children: [
-            // Sol: 4 buton
             Expanded(
               flex: 75,
               child: Container(
@@ -2491,25 +2633,21 @@ class NurvaQuickNavCard extends StatelessWidget {
                   mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                   children: [
                     _navItem(
-                        icon: Icons.menu_book,
                         emoji: '📖',
                         label: 'Sureler',
                         onTap: onSureler,
                         isDark: isDark),
                     _navItem(
-                        icon: Icons.loop,
                         emoji: '📿',
                         label: 'Tesbihat',
                         onTap: onTesbihat,
                         isDark: isDark),
                     _navItem(
-                        icon: Icons.bookmark,
                         emoji: '🔖',
                         label: 'Favorilerim',
                         onTap: onFavorilerim,
                         isDark: isDark),
                     _navItem(
-                        icon: Icons.calendar_month,
                         emoji: '🗓️',
                         label: 'Dua Takvimi',
                         onTap: onDuaTakvimi,
@@ -2518,7 +2656,6 @@ class NurvaQuickNavCard extends StatelessWidget {
                 ),
               ),
             ),
-            // Sağ: Cami + Hilal dekor
             SizedBox(
               width: 88,
               child: Container(
@@ -2531,7 +2668,6 @@ class NurvaQuickNavCard extends StatelessWidget {
                 ),
                 child: Stack(
                   children: [
-                    // Hilal
                     Positioned(
                       top: 8,
                       right: 8,
@@ -2540,7 +2676,6 @@ class NurvaQuickNavCard extends StatelessWidget {
                               fontSize: 14,
                               color: kNurvaGold.withOpacity(0.9))),
                     ),
-                    // Cami
                     const Center(
                       child: Padding(
                         padding: EdgeInsets.all(12),
@@ -2558,8 +2693,7 @@ class NurvaQuickNavCard extends StatelessWidget {
   }
 
   Widget _navItem(
-      {required IconData icon,
-      required String emoji,
+      {required String emoji,
       required String label,
       required VoidCallback onTap,
       required bool isDark}) {
@@ -2660,8 +2794,9 @@ class _HomeScreenState extends State<HomeScreen> {
       Map<String, dynamic> data;
       if (useGPS) {
         var perm = await Geolocator.checkPermission();
-        if (perm == LocationPermission.denied)
+        if (perm == LocationPermission.denied) {
           perm = await Geolocator.requestPermission();
+        }
         if (perm == LocationPermission.deniedForever) {
           data = await PrayerTimesService()
               .fetchByCity(city: 'Ankara', country: 'Turkey', method: method);
@@ -2673,10 +2808,11 @@ class _HomeScreenState extends State<HomeScreen> {
           try {
             final pmarks =
                 await placemarkFromCoordinates(pos.latitude, pos.longitude);
-            if (pmarks.isNotEmpty)
+            if (pmarks.isNotEmpty) {
               _cityName = pmarks.first.locality ??
                   pmarks.first.subAdministrativeArea ??
                   '';
+            }
           } catch (_) {}
           data = await PrayerTimesService().fetchByCoords(
               lat: pos.latitude, lon: pos.longitude, method: method);
@@ -2693,18 +2829,20 @@ class _HomeScreenState extends State<HomeScreen> {
 
       try {
         final hijri = data['date']?['hijri'];
-        if (hijri != null)
+        if (hijri != null) {
           _hijriDate =
               '${hijri['day']} ${hijri['month']?['en']} ${hijri['year']}';
+        }
       } catch (_) {}
 
-      if (mounted)
+      if (mounted) {
         setState(() {
           _timings = timings;
           _nextPrayer = nextPrayer;
           _timeUntilNext = dur;
           _loadingPrayer = false;
         });
+      }
 
       if (nextPrayer != null) {
         await HomeWidgetService.updatePrayerWidget(
@@ -2776,7 +2914,6 @@ class _HomeScreenState extends State<HomeScreen> {
     return Scaffold(
       body: SafeArea(
         child: Column(children: [
-          // ── NURVA Header ──
           Container(
             padding: const EdgeInsets.fromLTRB(16, 14, 16, 12),
             decoration: BoxDecoration(
@@ -2796,7 +2933,7 @@ class _HomeScreenState extends State<HomeScreen> {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                     Row(children: [
-                      _NurvaLogoIcon(size: 30),
+                      const _NurvaLogoIcon(size: 30),
                       const SizedBox(width: 8),
                       Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
@@ -2845,7 +2982,6 @@ class _HomeScreenState extends State<HomeScreen> {
                 child: Column(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
-                      // ── Ana Widget Kartı ──
                       if (!_loadingPrayer &&
                           _timings.isNotEmpty &&
                           _nextPrayer != null)
@@ -2867,8 +3003,6 @@ class _HomeScreenState extends State<HomeScreen> {
                                   color: kNurvaGold, strokeWidth: 2)),
                         ),
                       const SizedBox(height: 14),
-
-                      // ── Quick Nav ──
                       NurvaQuickNavCard(
                         onSureler: () {
                           final root = context
@@ -2892,15 +3026,12 @@ class _HomeScreenState extends State<HomeScreen> {
                         },
                       ),
                       const SizedBox(height: 14),
-
-                      // ── Geri sayım banner ──
                       if (!_loadingPrayer &&
                           _nextPrayer != null &&
                           _timings.isNotEmpty)
                         _buildNextPrayerBanner(gold, isDark),
                       if (!_loadingPrayer && _nextPrayer != null)
                         const SizedBox(height: 14),
-
                       _buildVerseCard(verse, gold, isDark),
                       const SizedBox(height: 14),
                       _buildHadithCard(hadith, gold, isDark),
@@ -3434,11 +3565,12 @@ class _QuranScreenState extends State<QuranScreen>
   }
 
   Future<void> _loadMeta() async {
-    if (mounted)
+    if (mounted) {
       setState(() {
         _loading = true;
         _error = '';
       });
+    }
     try {
       final r = await http
           .get(Uri.parse('https://api.alquran.cloud/v1/meta'))
@@ -3449,30 +3581,34 @@ class _QuranScreenState extends State<QuranScreen>
         final list = refs
             .map((e) => SurahMeta.fromJson(Map<String, dynamic>.from(e as Map)))
             .toList();
-        if (mounted)
+        if (mounted) {
           setState(() {
             _surahs = list;
             _filtered = list;
             _loading = false;
           });
-      } else
+        }
+      } else {
         throw Exception('HTTP ${r.statusCode}');
+      }
     } catch (e) {
-      if (mounted)
+      if (mounted) {
         setState(() {
           _loading = false;
           _error = e.toString();
         });
+      }
     }
   }
 
   Future<void> _loadLastPos() async {
     final p = await SharedPreferences.getInstance();
-    if (mounted)
+    if (mounted) {
       setState(() {
         _lastSurah = p.getInt('last_surah');
         _lastAyah = p.getInt('last_ayah') ?? 0;
       });
+    }
   }
 
   void _filter(String q) {
@@ -3657,23 +3793,25 @@ class _SurahDetailScreenState extends State<SurahDetailScreen> {
     _fetchSurah();
     _loadBookmarks();
     _player.playerStateStream.listen((s) {
-      if (mounted)
+      if (mounted) {
         setState(() {
           _isPlaying = s.playing;
           _isLoadingAudio = s.processingState == ProcessingState.loading ||
               s.processingState == ProcessingState.buffering;
         });
+      }
     });
     _player.processingStateStream.listen((ps) {
       if (ps == ProcessingState.completed) {
         final next = _playingIdx + 1;
-        if (next < _verses.length)
+        if (next < _verses.length) {
           _playVerse(next);
-        else if (mounted)
+        } else if (mounted) {
           setState(() {
             _playingIdx = -1;
             _isPlaying = false;
           });
+        }
       }
     });
   }
@@ -3688,11 +3826,12 @@ class _SurahDetailScreenState extends State<SurahDetailScreen> {
   }
 
   Future<void> _fetchSurah() async {
-    if (mounted)
+    if (mounted) {
       setState(() {
         _loading = true;
         _error = '';
       });
+    }
     try {
       final arabicUrl =
           'https://api.alquran.cloud/v1/surah/${widget.surah.number}/quran-uthmani';
@@ -3715,10 +3854,11 @@ class _SurahDetailScreenState extends State<SurahDetailScreen> {
       for (int i = 0; i < arabicAyahs.length; i++) {
         final a = arabicAyahs[i] as Map<String, dynamic>;
         String trans = '';
-        if (i < transAyahs.length)
+        if (i < transAyahs.length) {
           trans =
               ((transAyahs[i] as Map<String, dynamic>)['text'] as String? ?? '')
                   .replaceAll(RegExp(r'^\d+\.\s*'), '');
+        }
         verses.add({
           'arabic': a['text'] as String? ?? '',
           'translation': trans,
@@ -3734,27 +3874,30 @@ class _SurahDetailScreenState extends State<SurahDetailScreen> {
         });
         final p = await SharedPreferences.getInstance();
         await p.setInt('last_surah', widget.surah.number);
-        if (widget.scrollToAyah > 0)
+        if (widget.scrollToAyah > 0) {
           WidgetsBinding.instance.addPostFrameCallback(
               (_) => _scrollToAyah(widget.scrollToAyah - 1));
+        }
       }
     } catch (e) {
-      if (mounted)
+      if (mounted) {
         setState(() {
           _loading = false;
           _error = e.toString();
         });
+      }
     }
   }
 
   void _scrollToAyah(int idx) {
     if (idx < 0 || idx >= _verses.length) return;
     final key = _ayahKeys[idx];
-    if (key?.currentContext != null)
+    if (key?.currentContext != null) {
       Scrollable.ensureVisible(key!.currentContext!,
           duration: const Duration(milliseconds: 500),
           curve: Curves.easeInOut,
           alignment: 0.2);
+    }
   }
 
   Future<void> _playVerse(int idx) async {
@@ -3805,12 +3948,13 @@ class _SurahDetailScreenState extends State<SurahDetailScreen> {
       });
       setState(() => _bookmarkedAyahs.add(ayahNum));
     }
-    if (mounted)
+    if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(
           content:
               Text(isBookmarked ? 'Yer imi kaldırıldı' : 'Yer imine eklendi ✓'),
           duration: const Duration(seconds: 1),
           backgroundColor: isBookmarked ? Colors.grey : kNurvaGold));
+    }
   }
 
   @override
@@ -3847,9 +3991,10 @@ class _SurahDetailScreenState extends State<SurahDetailScreen> {
           PopupMenuButton<String>(
             icon: Icon(Icons.more_vert, color: gold),
             onSelected: (v) {
-              if (v == 'share')
+              if (v == 'share') {
                 Share.share(
                     '${widget.surah.name} — ${widget.surah.englishName}\n${widget.surah.englishMeaning}');
+              }
               if (v == 'play_all') _playVerse(0);
             },
             itemBuilder: (_) => [
@@ -4134,7 +4279,7 @@ class _BookmarksTabState extends State<BookmarksTab> {
   Widget build(BuildContext context) {
     final gold = Theme.of(context).colorScheme.primary;
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    if (_bookmarks.isEmpty)
+    if (_bookmarks.isEmpty) {
       return Center(
           child: Column(mainAxisSize: MainAxisSize.min, children: [
         Icon(Icons.bookmark_border, size: 64, color: gold.withOpacity(0.3)),
@@ -4147,6 +4292,7 @@ class _BookmarksTabState extends State<BookmarksTab> {
             style: TextStyle(
                 fontSize: 12, color: isDark ? Colors.white24 : Colors.black26)),
       ]));
+    }
     return Column(children: [
       Padding(
           padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
@@ -4316,7 +4462,7 @@ class _PrayerTimesScreenState extends State<PrayerTimesScreen>
 
   Future<void> _loadSettings() async {
     final p = await SharedPreferences.getInstance();
-    if (mounted)
+    if (mounted) {
       setState(() {
         _method = p.getInt('prayer_method') ?? 13;
         _useGPS = p.getBool('use_gps') ?? true;
@@ -4326,6 +4472,7 @@ class _PrayerTimesScreenState extends State<PrayerTimesScreen>
         _adhanEnabled = p.getBool('adhan_enabled') ?? true;
         _reminderEnabled = p.getBool('reminder_enabled') ?? true;
       });
+    }
   }
 
   Future<void> _loadTodayStatus() async {
@@ -4335,11 +4482,12 @@ class _PrayerTimesScreenState extends State<PrayerTimesScreen>
 
   void _startTimer() {
     _timer = Timer.periodic(const Duration(seconds: 1), (_) {
-      if (_timings.isNotEmpty && mounted)
+      if (_timings.isNotEmpty && mounted) {
         setState(() {
           _nextPrayer = PrayerTimesService().getNextPrayer(_timings);
           _timeUntilNext = PrayerTimesService().timeUntilNext(_timings);
         });
+      }
     });
   }
 
@@ -4372,8 +4520,9 @@ class _PrayerTimesScreenState extends State<PrayerTimesScreen>
     if (mounted) setState(() => _adhanPlaying = true);
     await AdhanPlayer().playAdhan();
     AdhanPlayer().player.processingStateStream.listen((ps) {
-      if (ps == ProcessingState.completed && mounted)
+      if (ps == ProcessingState.completed && mounted) {
         setState(() => _adhanPlaying = false);
+      }
     });
   }
 
@@ -4383,19 +4532,22 @@ class _PrayerTimesScreenState extends State<PrayerTimesScreen>
   }
 
   Future<void> _fetchPrayerTimes() async {
-    if (mounted)
+    if (mounted) {
       setState(() {
         _loading = true;
         _error = '';
       });
+    }
     try {
       Map<String, dynamic> data;
       if (_useGPS) {
         var perm = await Geolocator.checkPermission();
-        if (perm == LocationPermission.denied)
+        if (perm == LocationPermission.denied) {
           perm = await Geolocator.requestPermission();
-        if (perm == LocationPermission.deniedForever)
+        }
+        if (perm == LocationPermission.deniedForever) {
           throw Exception(L.locationPermDenied);
+        }
         final pos = await Geolocator.getCurrentPosition(
             locationSettings: const LocationSettings(
                 accuracy: LocationAccuracy.medium,
@@ -4428,11 +4580,12 @@ class _PrayerTimesScreenState extends State<PrayerTimesScreen>
       final dur = PrayerTimesService().timeUntilNext(timings);
       try {
         final hijri = data['date']?['hijri'];
-        if (hijri != null)
+        if (hijri != null) {
           _hijriDate =
               '${hijri['day']} ${hijri['month']?['en']} ${hijri['year']} H';
+        }
       } catch (_) {}
-      if (mounted)
+      if (mounted) {
         setState(() {
           _timings = timings;
           _meta = data;
@@ -4440,6 +4593,7 @@ class _PrayerTimesScreenState extends State<PrayerTimesScreen>
           _timeUntilNext = dur;
           _loading = false;
         });
+      }
 
       await NotificationService().schedulePrayerNotifications(
           times: timings,
@@ -4460,11 +4614,12 @@ class _PrayerTimesScreenState extends State<PrayerTimesScreen>
       }
       _fetchWeeklyTimes();
     } catch (e) {
-      if (mounted)
+      if (mounted) {
         setState(() {
           _loading = false;
           _error = e.toString();
         });
+      }
     }
   }
 
@@ -4505,11 +4660,12 @@ class _PrayerTimesScreenState extends State<PrayerTimesScreen>
           });
         } catch (_) {}
       }
-      if (mounted)
+      if (mounted) {
         setState(() {
           _weeklyTimes = weekly;
           _loadingWeekly = false;
         });
+      }
     } catch (_) {
       if (mounted) setState(() => _loadingWeekly = false);
     }
@@ -5107,13 +5263,14 @@ class _PrayerTimesScreenState extends State<PrayerTimesScreen>
                       setState(() => _notificationsEnabled = val);
                       (await SharedPreferences.getInstance())
                           .setBool('notifications_enabled', val);
-                      if (_timings.isNotEmpty)
+                      if (_timings.isNotEmpty) {
                         await NotificationService().schedulePrayerNotifications(
                             times: _timings,
                             cityName: _cityName,
                             adhanEnabled: _adhanEnabled,
                             notificationsEnabled: val,
                             reminderEnabled: _reminderEnabled);
+                      }
                     }),
                 SwitchListTile(
                     contentPadding: EdgeInsets.zero,
@@ -5131,7 +5288,7 @@ class _PrayerTimesScreenState extends State<PrayerTimesScreen>
                             setState(() => _adhanEnabled = val);
                             (await SharedPreferences.getInstance())
                                 .setBool('adhan_enabled', val);
-                            if (_timings.isNotEmpty)
+                            if (_timings.isNotEmpty) {
                               await NotificationService()
                                   .schedulePrayerNotifications(
                                       times: _timings,
@@ -5140,13 +5297,14 @@ class _PrayerTimesScreenState extends State<PrayerTimesScreen>
                                       notificationsEnabled:
                                           _notificationsEnabled,
                                       reminderEnabled: _reminderEnabled);
+                            }
                           }
                         : null),
                 SwitchListTile(
                     contentPadding: EdgeInsets.zero,
-                    title: const Text('10 Dk Hatırlatma',
+                    title: const Text('15 Dk Hatırlatma',
                         style: TextStyle(fontSize: 14)),
-                    subtitle: Text('Namaza 10 dakika kala bildirim',
+                    subtitle: Text('Namaza 15 dakika kala bildirim',
                         style: TextStyle(
                             fontSize: 11,
                             color: Theme.of(ctx).textTheme.bodySmall?.color)),
@@ -5158,7 +5316,7 @@ class _PrayerTimesScreenState extends State<PrayerTimesScreen>
                             setState(() => _reminderEnabled = val);
                             (await SharedPreferences.getInstance())
                                 .setBool('reminder_enabled', val);
-                            if (_timings.isNotEmpty)
+                            if (_timings.isNotEmpty) {
                               await NotificationService()
                                   .schedulePrayerNotifications(
                                       times: _timings,
@@ -5167,6 +5325,7 @@ class _PrayerTimesScreenState extends State<PrayerTimesScreen>
                                       notificationsEnabled:
                                           _notificationsEnabled,
                                       reminderEnabled: val);
+                            }
                           }
                         : null),
                 const SizedBox(height: 8),
@@ -5666,6 +5825,32 @@ class SettingsScreen extends StatefulWidget {
 }
 
 class _SettingsScreenState extends State<SettingsScreen> {
+  bool _recitersUnlocked = false;
+  bool _sepiaUnlocked = false;
+  bool _nightUnlocked = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadUnlocks();
+  }
+
+  Future<void> _loadUnlocks() async {
+    final r =
+        await PremiumUnlockService.isUnlocked(PremiumUnlockService.keyReciters);
+    final s = await PremiumUnlockService.isUnlocked(
+        PremiumUnlockService.keyMushafSepia);
+    final n = await PremiumUnlockService.isUnlocked(
+        PremiumUnlockService.keyMushafNight);
+    if (mounted) {
+      setState(() {
+        _recitersUnlocked = r;
+        _sepiaUnlocked = s;
+        _nightUnlocked = n;
+      });
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final gold = Theme.of(context).colorScheme.primary;
@@ -5717,6 +5902,60 @@ class _SettingsScreenState extends State<SettingsScreen> {
               gold: gold,
               isDark: isDark),
           const SizedBox(height: 12),
+
+          // ── PREMIUM ÖZELLİKLER (Ödüllü reklamla açılır) ──
+          _sectionTitle('Premium Özellikler', gold),
+          _settingCard(
+            icon: Icons.mic_external_on,
+            title: 'Tüm Kariler',
+            subtitle: _recitersUnlocked
+                ? 'Açık — 12 kari kullanılabilir'
+                : 'Reklam izleyerek 12 kariyi aç',
+            gold: gold,
+            isDark: isDark,
+            trailing: _recitersUnlocked
+                ? Icon(Icons.check_circle, color: Colors.green)
+                : Icon(Icons.play_circle_fill, color: gold),
+            onTap: _recitersUnlocked
+                ? null
+                : () => PremiumUnlockService.showUnlockDialog(context,
+                    unlockKey: PremiumUnlockService.keyReciters,
+                    title: 'Tüm Kariler',
+                    desc: 'Kısa bir reklam izleyerek 12 kariyi sınırsız açın.',
+                    onUnlocked: () => setState(() => _recitersUnlocked = true)),
+          ),
+          const SizedBox(height: 8),
+          _settingCard(
+            icon: Icons.palette_outlined,
+            title: 'Mushaf Temaları',
+            subtitle: (_sepiaUnlocked && _nightUnlocked)
+                ? 'Açık — Sepya & Gece modu kullanılabilir'
+                : 'Reklam izleyerek Sepya & Gece temasını aç',
+            gold: gold,
+            isDark: isDark,
+            trailing: (_sepiaUnlocked && _nightUnlocked)
+                ? Icon(Icons.check_circle, color: Colors.green)
+                : Icon(Icons.play_circle_fill, color: gold),
+            onTap: (_sepiaUnlocked && _nightUnlocked)
+                ? null
+                : () => PremiumUnlockService.showUnlockDialog(context,
+                        unlockKey: PremiumUnlockService.keyMushafSepia,
+                        title: 'Mushaf Temaları',
+                        desc:
+                            'Reklam izleyerek sepya ve gece okuma temalarını açın.',
+                        onUnlocked: () async {
+                      await PremiumUnlockService.unlock(
+                          PremiumUnlockService.keyMushafNight);
+                      if (mounted) {
+                        setState(() {
+                          _sepiaUnlocked = true;
+                          _nightUnlocked = true;
+                        });
+                      }
+                    }),
+          ),
+          const SizedBox(height: 12),
+
           _sectionTitle(L.widgetInfo, gold),
           Container(
             padding: const EdgeInsets.all(16),
@@ -5759,7 +5998,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
             Text('NURVA – Kur\'an-ı Kerim',
                 style: TextStyle(
                     color: gold, fontSize: 14, fontWeight: FontWeight.w700)),
-            Text('v3.4.0 • Tüm hakları saklıdır',
+            Text('v3.5.0 • Tüm hakları saklıdır',
                 style: TextStyle(
                     color: isDark ? Colors.white38 : Colors.black38,
                     fontSize: 11)),
@@ -5876,21 +6115,48 @@ class _SettingsScreenState extends State<SettingsScreen> {
                             child: ListView(
                                 controller: ctrl,
                                 children: kReciters.entries
-                                    .map((e) => ListTile(
-                                        title: Text(e.value['name']!,
+                                    .toList()
+                                    .asMap()
+                                    .entries
+                                    .map((mapEntry) {
+                                  final idx = mapEntry.key;
+                                  final e = mapEntry.value;
+                                  final locked = idx >= 4 && !_recitersUnlocked;
+                                  return ListTile(
+                                      title: Row(children: [
+                                        if (locked)
+                                          Padding(
+                                              padding: const EdgeInsets.only(
+                                                  right: 6),
+                                              child: PremiumUnlockService
+                                                  .lockBadge(gold)),
+                                        Text(e.value['name']!,
                                             style:
                                                 const TextStyle(fontSize: 14)),
-                                        subtitle: Text(e.value['style']!,
-                                            style:
-                                                const TextStyle(fontSize: 11)),
-                                        trailing: appState?.reciter == e.key
-                                            ? Icon(Icons.check, color: gold)
-                                            : null,
-                                        onTap: () {
-                                          appState?.setReciter(e.key);
+                                      ]),
+                                      subtitle: Text(e.value['style']!,
+                                          style: const TextStyle(fontSize: 11)),
+                                      trailing: appState?.reciter == e.key
+                                          ? Icon(Icons.check, color: gold)
+                                          : null,
+                                      onTap: () {
+                                        if (locked) {
                                           Navigator.pop(ctx);
-                                        }))
-                                    .toList())),
+                                          PremiumUnlockService.showUnlockDialog(
+                                              context,
+                                              unlockKey: PremiumUnlockService
+                                                  .keyReciters,
+                                              title: 'Tüm Kariler',
+                                              desc:
+                                                  'Kısa bir reklam izleyerek 12 kariyi sınırsız açın.',
+                                              onUnlocked: () => setState(() =>
+                                                  _recitersUnlocked = true));
+                                          return;
+                                        }
+                                        appState?.setReciter(e.key);
+                                        Navigator.pop(ctx);
+                                      });
+                                }).toList())),
                       ])));
         });
   }
@@ -6038,113 +6304,6 @@ class JuzListTab extends StatelessWidget {
 }
 
 // ─────────────────────────────────────────────
-//  CÜZ LİSTESİ TAB
-// ─────────────────────────────────────────────
-class juzlisttab extends StatelessWidget {
-  final List<SurahMeta> surahs;
-  final String reciter;
-  final String translation;
-  const juzlisttab(
-      {super.key,
-      required this.surahs,
-      required this.reciter,
-      required this.translation});
-
-  @override
-  Widget build(BuildContext context) {
-    final gold = Theme.of(context).colorScheme.primary;
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    if (surahs.isEmpty) return _loadingCenter();
-    return ListView.builder(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-      itemCount: 30,
-      itemBuilder: (ctx, i) {
-        final juz = kJuzData[i];
-        final juzNum = juz['juz'] as int;
-        final startSurahN = juz['startSurah'] as int;
-        final startAyah = juz['startAyah'] as int;
-        final endSurahN = juz['endSurah'] as int;
-        final endAyah = juz['endAyah'] as int;
-        final juzName = juz['name'] as String;
-        final startSurah = surahs.firstWhere((s) => s.number == startSurahN,
-            orElse: () => surahs.first);
-        final endSurah = surahs.firstWhere((s) => s.number == endSurahN,
-            orElse: () => surahs.last);
-        return Card(
-          margin: const EdgeInsets.only(bottom: 8),
-          child: InkWell(
-            onTap: () => Navigator.push(
-                ctx,
-                MaterialPageRoute(
-                    builder: (_) => JuzDetailScreen(
-                        juzNumber: juzNum,
-                        startSurah: startSurah,
-                        startAyah: startAyah,
-                        reciter: reciter,
-                        translation: translation,
-                        surahs: surahs))),
-            borderRadius: BorderRadius.circular(14),
-            child: Padding(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-                child: Row(children: [
-                  Container(
-                      width: 50,
-                      height: 50,
-                      decoration: BoxDecoration(
-                          shape: BoxShape.circle,
-                          gradient: LinearGradient(
-                              colors: [gold, gold.withOpacity(0.6)],
-                              begin: Alignment.topLeft,
-                              end: Alignment.bottomRight)),
-                      child: Column(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            Text('$juzNum',
-                                style: const TextStyle(
-                                    fontSize: 18,
-                                    fontWeight: FontWeight.w800,
-                                    color: Color(0xFF0D1117))),
-                            Text(L.juz,
-                                style: const TextStyle(
-                                    fontSize: 8,
-                                    fontWeight: FontWeight.w700,
-                                    color: Color(0xFF0D1117))),
-                          ])),
-                  const SizedBox(width: 14),
-                  Expanded(
-                      child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                        Text(
-                            '${startSurah.englishName}  –  ${endSurah.englishName}',
-                            style: const TextStyle(
-                                fontSize: 14, fontWeight: FontWeight.w600)),
-                        const SizedBox(height: 3),
-                        Text(
-                            '${startSurah.number}:$startAyah  →  ${endSurah.number}:$endAyah',
-                            style: TextStyle(
-                                fontSize: 11,
-                                color:
-                                    isDark ? Colors.white38 : Colors.black38)),
-                      ])),
-                  Column(crossAxisAlignment: CrossAxisAlignment.end, children: [
-                    Text(juzName,
-                        style: GoogleFonts.notoNaskhArabic(
-                            fontSize: 20, color: gold),
-                        textDirection: TextDirection.rtl),
-                    const SizedBox(height: 4),
-                    Icon(Icons.play_circle_outline, color: gold, size: 22),
-                  ]),
-                ])),
-          ),
-        );
-      },
-    );
-  }
-}
-
-// ─────────────────────────────────────────────
 //  CÜZ DETAY EKRANI
 // ─────────────────────────────────────────────
 class JuzDetailScreen extends StatefulWidget {
@@ -6192,11 +6351,12 @@ class _JuzDetailScreenState extends State<JuzDetailScreen> {
   }
 
   Future<void> _fetchJuz() async {
-    if (mounted)
+    if (mounted) {
       setState(() {
         _loading = true;
         _error = '';
       });
+    }
     try {
       final r = await http
           .get(Uri.parse(
@@ -6212,19 +6372,21 @@ class _JuzDetailScreenState extends State<JuzDetailScreen> {
             .get(Uri.parse(
                 'https://api.alquran.cloud/v1/juz/${widget.juzNumber}/${widget.translation}'))
             .timeout(const Duration(seconds: 20));
-        if (tr2.statusCode == 200)
+        if (tr2.statusCode == 200) {
           transAyahs = ((jsonDecode(tr2.body) as Map<String, dynamic>)['data']
               as Map<String, dynamic>)['ayahs'] as List;
+        }
       } catch (_) {}
       final verses = <Map<String, dynamic>>[];
       for (int i = 0; i < ayahs.length; i++) {
         final a = ayahs[i] as Map<String, dynamic>;
         final surahN = a['surah']?['number'] as int? ?? 0;
         String meaning = '';
-        if (i < transAyahs.length)
+        if (i < transAyahs.length) {
           meaning =
               ((transAyahs[i] as Map<String, dynamic>)['text'] as String? ?? '')
                   .replaceAll(RegExp(r'^\d+\.\s*'), '');
+        }
         verses.add({
           'arabic': a['text'] as String? ?? '',
           'translation': meaning,
@@ -6235,17 +6397,19 @@ class _JuzDetailScreenState extends State<JuzDetailScreen> {
           'globalNum': a['number'] as int? ?? 0
         });
       }
-      if (mounted)
+      if (mounted) {
         setState(() {
           _verses = verses;
           _loading = false;
         });
+      }
     } catch (e) {
-      if (mounted)
+      if (mounted) {
         setState(() {
           _loading = false;
           _error = e.toString();
         });
+      }
     }
   }
 
@@ -6452,7 +6616,7 @@ class _JuzDetailScreenState extends State<JuzDetailScreen> {
 }
 
 // ─────────────────────────────────────────────
-//  MUSHAF TAB
+//  MUSHAF TAB — Profesyonel: Cüz/Sure hızlı geçiş + tema (sepya/gece kilit)
 // ─────────────────────────────────────────────
 class MushafTab extends StatefulWidget {
   final String reciter;
@@ -6471,16 +6635,32 @@ class _MushafTabState extends State<MushafTab> {
   bool _showNav = true;
   static const int kTotalPages = 604;
 
+  // Profesyonel tema sistemi (ödüllü reklamla açılır)
+  String _theme = 'light'; // light | sepia | night
+  bool _sepiaUnlocked = false;
+  bool _nightUnlocked = false;
+  Future<List<SurahMeta>>? _surahsCache;
+
   @override
   void initState() {
     super.initState();
     _loadPage(1);
     _loadSavedPage();
+    PremiumUnlockService.isUnlocked(PremiumUnlockService.keyMushafSepia)
+        .then((v) {
+      if (mounted) setState(() => _sepiaUnlocked = v);
+    });
+    PremiumUnlockService.isUnlocked(PremiumUnlockService.keyMushafNight)
+        .then((v) {
+      if (mounted) setState(() => _nightUnlocked = v);
+    });
   }
 
   Future<void> _loadSavedPage() async {
     final p = await SharedPreferences.getInstance();
     final saved = p.getInt('mushaf_page') ?? 1;
+    final savedTheme = p.getString('mushaf_theme') ?? 'light';
+    if (mounted) setState(() => _theme = savedTheme);
     if (saved != 1 && mounted) {
       setState(() => _currentPage = saved);
       WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -6492,11 +6672,12 @@ class _MushafTabState extends State<MushafTab> {
 
   Future<void> _loadPage(int page) async {
     if (_pageCache.containsKey(page)) return;
-    if (mounted)
+    if (mounted) {
       setState(() {
         _loading = true;
         _error = '';
       });
+    }
     try {
       final r = await http
           .get(Uri.parse(
@@ -6508,21 +6689,25 @@ class _MushafTabState extends State<MushafTab> {
       final ayahs = (data['ayahs'] as List)
           .map((e) => Map<String, dynamic>.from(e as Map))
           .toList();
-      if (mounted)
+      if (mounted) {
         setState(() {
           _pageCache[page] = ayahs;
           _loading = false;
         });
-      if (page < kTotalPages && !_pageCache.containsKey(page + 1))
+      }
+      if (page < kTotalPages && !_pageCache.containsKey(page + 1)) {
         _prefetchPage(page + 1);
-      if (page > 1 && !_pageCache.containsKey(page - 1))
+      }
+      if (page > 1 && !_pageCache.containsKey(page - 1)) {
         _prefetchPage(page - 1);
+      }
     } catch (e) {
-      if (mounted)
+      if (mounted) {
         setState(() {
           _loading = false;
           _error = e.toString();
         });
+      }
     }
   }
 
@@ -6547,8 +6732,10 @@ class _MushafTabState extends State<MushafTab> {
   void _goToPage(int page) {
     page = page.clamp(1, kTotalPages);
     setState(() => _currentPage = page);
-    _pageCtrl.animateToPage(page - 1,
-        duration: const Duration(milliseconds: 400), curve: Curves.easeInOut);
+    if (_pageCtrl.hasClients) {
+      _pageCtrl.animateToPage(page - 1,
+          duration: const Duration(milliseconds: 400), curve: Curves.easeInOut);
+    }
     _loadPage(page);
     SharedPreferences.getInstance().then((p) => p.setInt('mushaf_page', page));
   }
@@ -6591,6 +6778,164 @@ class _MushafTabState extends State<MushafTab> {
         });
   }
 
+  // ── Sure/Cüz hızlı geçiş (ekran görüntüsündeki gibi) ──
+  Future<List<SurahMeta>> _cachedSurahsFuture() {
+    return _surahsCache ??= http
+        .get(Uri.parse('https://api.alquran.cloud/v1/meta'))
+        .timeout(const Duration(seconds: 15))
+        .then((r) {
+      final refs = (jsonDecode(r.body)['data']['surahs']['references'] as List);
+      return refs
+          .map((e) => SurahMeta.fromJson(Map<String, dynamic>.from(e as Map)))
+          .toList();
+    });
+  }
+
+  Future<int?> _firstPageOfSurah(int surahNum) async {
+    try {
+      final r = await http
+          .get(Uri.parse(
+              'https://api.alquran.cloud/v1/surah/$surahNum/quran-uthmani'))
+          .timeout(const Duration(seconds: 15));
+      final data = (jsonDecode(r.body) as Map<String, dynamic>)['data']
+          as Map<String, dynamic>;
+      final ayahs = data['ayahs'] as List;
+      if (ayahs.isEmpty) return null;
+      return (ayahs.first as Map<String, dynamic>)['page'] as int?;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  Future<int?> _firstPageOfJuz(int juzNum) async {
+    try {
+      final r = await http
+          .get(Uri.parse(
+              'https://api.alquran.cloud/v1/juz/$juzNum/quran-uthmani'))
+          .timeout(const Duration(seconds: 15));
+      final data = (jsonDecode(r.body) as Map<String, dynamic>)['data']
+          as Map<String, dynamic>;
+      final ayahs = data['ayahs'] as List;
+      if (ayahs.isEmpty) return null;
+      return (ayahs.first as Map<String, dynamic>)['page'] as int?;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  void _showSurahPicker(Color gold) {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Theme.of(context).colorScheme.surface,
+      shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      builder: (ctx) => DraggableScrollableSheet(
+        initialChildSize: 0.65,
+        minChildSize: 0.4,
+        maxChildSize: 0.92,
+        expand: false,
+        builder: (_, ctrl) => Padding(
+          padding: const EdgeInsets.all(16),
+          child:
+              Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Text('Sure Seç',
+                style: GoogleFonts.tajawal(
+                    fontSize: 16, fontWeight: FontWeight.w800, color: gold)),
+            const SizedBox(height: 10),
+            Expanded(
+                child: FutureBuilder<List<SurahMeta>>(
+              future: _cachedSurahsFuture(),
+              builder: (c, snap) {
+                if (!snap.hasData) {
+                  return const Center(child: CircularProgressIndicator());
+                }
+                final list = snap.data!;
+                return ListView.builder(
+                  controller: ctrl,
+                  itemCount: list.length,
+                  itemBuilder: (c, i) => ListTile(
+                    dense: true,
+                    leading: CircleAvatar(
+                        radius: 14,
+                        backgroundColor: gold.withOpacity(0.15),
+                        child: Text('${list[i].number}',
+                            style: TextStyle(fontSize: 10, color: gold))),
+                    title: Text('${list[i].englishName}',
+                        style: const TextStyle(fontSize: 13)),
+                    trailing: Text(list[i].name,
+                        style: GoogleFonts.notoNaskhArabic(
+                            fontSize: 15, color: gold),
+                        textDirection: TextDirection.rtl),
+                    onTap: () async {
+                      Navigator.pop(ctx);
+                      final page = await _firstPageOfSurah(list[i].number);
+                      if (page != null) _goToPage(page);
+                    },
+                  ),
+                );
+              },
+            )),
+          ]),
+        ),
+      ),
+    );
+  }
+
+  void _showJuzPicker(Color gold) {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Theme.of(context).colorScheme.surface,
+      shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      builder: (ctx) => DraggableScrollableSheet(
+        initialChildSize: 0.65,
+        minChildSize: 0.4,
+        maxChildSize: 0.92,
+        expand: false,
+        builder: (_, ctrl) => Padding(
+          padding: const EdgeInsets.all(16),
+          child:
+              Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Text('${L.juz} Seç',
+                style: GoogleFonts.tajawal(
+                    fontSize: 16, fontWeight: FontWeight.w800, color: gold)),
+            const SizedBox(height: 10),
+            Expanded(
+                child: ListView.builder(
+              controller: ctrl,
+              itemCount: 30,
+              itemBuilder: (c, i) => ListTile(
+                dense: true,
+                leading: CircleAvatar(
+                    radius: 14,
+                    backgroundColor: gold,
+                    child: Text('${i + 1}',
+                        style: const TextStyle(
+                            fontSize: 11, color: Color(0xFF0D1117)))),
+                title: Text(kJuzData[i]['name'] as String,
+                    style: GoogleFonts.notoNaskhArabic(fontSize: 15),
+                    textDirection: TextDirection.rtl),
+                onTap: () async {
+                  Navigator.pop(ctx);
+                  final page = await _firstPageOfJuz(i + 1);
+                  if (page != null) _goToPage(page);
+                },
+              ),
+            )),
+          ]),
+        ),
+      ),
+    );
+  }
+
+  void _setTheme(String key) {
+    setState(() => _theme = key);
+    SharedPreferences.getInstance()
+        .then((p) => p.setString('mushaf_theme', key));
+  }
+
   @override
   void dispose() {
     _pageCtrl.dispose();
@@ -6601,7 +6946,11 @@ class _MushafTabState extends State<MushafTab> {
   Widget build(BuildContext context) {
     final gold = Theme.of(context).colorScheme.primary;
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    final bg = isDark ? const Color(0xFF0D1117) : const Color(0xFFFAF7F0);
+    final bg = _theme == 'night'
+        ? const Color(0xFF0D1117)
+        : _theme == 'sepia'
+            ? const Color(0xFFF4ECD8)
+            : (isDark ? const Color(0xFF0D1117) : const Color(0xFFFAF7F0));
 
     return Scaffold(
       backgroundColor: bg,
@@ -6633,7 +6982,7 @@ class _MushafTabState extends State<MushafTab> {
         AnimatedPositioned(
           duration: const Duration(milliseconds: 250),
           curve: Curves.easeInOut,
-          top: _showNav ? 0 : -80,
+          top: _showNav ? 0 : -140,
           left: 0,
           right: 0,
           child: Container(
@@ -6644,40 +6993,90 @@ class _MushafTabState extends State<MushafTab> {
                 bottom: 10),
             decoration: BoxDecoration(
                 color: isDark
-                    ? const Color(0xFF161B22).withOpacity(0.95)
-                    : Colors.white.withOpacity(0.95),
+                    ? const Color(0xFF161B22).withOpacity(0.97)
+                    : Colors.white.withOpacity(0.97),
                 border:
                     Border(bottom: BorderSide(color: gold.withOpacity(0.2)))),
-            child: Row(children: [
-              Text(L.mushaf,
-                  style: GoogleFonts.tajawal(
-                      fontSize: 18, fontWeight: FontWeight.w800, color: gold)),
-              const Spacer(),
-              IconButton(
-                  icon: const Icon(Icons.text_decrease, size: 20),
-                  color: gold,
-                  onPressed: () => setState(() =>
-                      _fontSize = (_fontSize - 2).clamp(14, 34).toDouble())),
-              IconButton(
-                  icon: const Icon(Icons.text_increase, size: 20),
-                  color: gold,
-                  onPressed: () => setState(() =>
-                      _fontSize = (_fontSize + 2).clamp(14, 34).toDouble())),
-              GestureDetector(
-                  onTap: _showJumpDialog,
-                  child: Container(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 12, vertical: 6),
-                      decoration: BoxDecoration(
-                          color: gold.withOpacity(0.12),
-                          borderRadius: BorderRadius.circular(8),
-                          border: Border.all(color: gold.withOpacity(0.3))),
-                      child: Text('$_currentPage / $kTotalPages',
-                          style: TextStyle(
-                              fontSize: 12,
-                              fontWeight: FontWeight.w700,
-                              color: gold)))),
-            ]),
+            child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Row(children: [
+                    Text(L.mushaf,
+                        style: GoogleFonts.tajawal(
+                            fontSize: 18,
+                            fontWeight: FontWeight.w800,
+                            color: gold)),
+                    const Spacer(),
+                    IconButton(
+                        icon: const Icon(Icons.text_decrease, size: 20),
+                        color: gold,
+                        onPressed: () => setState(() => _fontSize =
+                            (_fontSize - 2).clamp(14, 34).toDouble())),
+                    IconButton(
+                        icon: const Icon(Icons.text_increase, size: 20),
+                        color: gold,
+                        onPressed: () => setState(() => _fontSize =
+                            (_fontSize + 2).clamp(14, 34).toDouble())),
+                    GestureDetector(
+                        onTap: _showJumpDialog,
+                        child: Container(
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 12, vertical: 6),
+                            decoration: BoxDecoration(
+                                color: gold.withOpacity(0.12),
+                                borderRadius: BorderRadius.circular(8),
+                                border:
+                                    Border.all(color: gold.withOpacity(0.3))),
+                            child: Text('$_currentPage / $kTotalPages',
+                                style: TextStyle(
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.w700,
+                                    color: gold)))),
+                  ]),
+                  const SizedBox(height: 8),
+                  SizedBox(
+                    height: 34,
+                    child: Row(children: [
+                      Expanded(
+                          child: _dropdownChip(
+                              label: '${L.juz} Seç',
+                              icon: Icons.bookmark_border,
+                              gold: gold,
+                              onTap: () => _showJuzPicker(gold))),
+                      const SizedBox(width: 6),
+                      Expanded(
+                          child: _dropdownChip(
+                              label: 'Sure Seç',
+                              icon: Icons.menu_book_outlined,
+                              gold: gold,
+                              onTap: () => _showSurahPicker(gold))),
+                      const SizedBox(width: 6),
+                      _themeDot(
+                          key: 'light',
+                          color: Colors.white,
+                          gold: gold,
+                          locked: false),
+                      _themeDot(
+                          key: 'sepia',
+                          color: const Color(0xFFF4ECD8),
+                          gold: gold,
+                          locked: !_sepiaUnlocked,
+                          unlockKey: PremiumUnlockService.keyMushafSepia,
+                          dialogTitle: 'Sepya Tema',
+                          dialogDesc:
+                              'Göz yormayan sepya okuma temasını açmak için reklam izleyin.'),
+                      _themeDot(
+                          key: 'night',
+                          color: const Color(0xFF0D1117),
+                          gold: gold,
+                          locked: !_nightUnlocked,
+                          unlockKey: PremiumUnlockService.keyMushafNight,
+                          dialogTitle: 'Gece Modu',
+                          dialogDesc:
+                              'Karanlıkta göz dostu gece okuma temasını açmak için reklam izleyin.'),
+                    ]),
+                  ),
+                ]),
           ),
         ),
         AnimatedPositioned(
@@ -6705,7 +7104,6 @@ class _MushafTabState extends State<MushafTab> {
                       label: 'Önceki',
                       enabled: _currentPage > 1,
                       gold: gold,
-                      isDark: isDark,
                       onTap: () => _goToPage(_currentPage - 1)),
                   Expanded(
                       child: Padding(
@@ -6729,7 +7127,6 @@ class _MushafTabState extends State<MushafTab> {
                       label: 'Sonraki',
                       enabled: _currentPage < kTotalPages,
                       gold: gold,
-                      isDark: isDark,
                       onTap: () => _goToPage(_currentPage + 1),
                       iconFirst: false),
                 ]),
@@ -6741,8 +7138,88 @@ class _MushafTabState extends State<MushafTab> {
     );
   }
 
+  Widget _dropdownChip(
+      {required String label,
+      required IconData icon,
+      required Color gold,
+      required VoidCallback onTap}) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10),
+        decoration: BoxDecoration(
+            color: gold.withOpacity(0.1),
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(color: gold.withOpacity(0.25))),
+        child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+          Icon(icon, size: 13, color: gold),
+          const SizedBox(width: 4),
+          Flexible(
+              child: Text(label,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                      fontSize: 11, color: gold, fontWeight: FontWeight.w600))),
+          Icon(Icons.arrow_drop_down, size: 16, color: gold),
+        ]),
+      ),
+    );
+  }
+
+  Widget _themeDot({
+    required String key,
+    required Color color,
+    required Color gold,
+    required bool locked,
+    String? unlockKey,
+    String? dialogTitle,
+    String? dialogDesc,
+  }) {
+    final sel = _theme == key;
+    return GestureDetector(
+      onTap: () {
+        if (locked && unlockKey != null) {
+          PremiumUnlockService.showUnlockDialog(
+            context,
+            unlockKey: unlockKey,
+            title: dialogTitle ?? 'Tema',
+            desc: dialogDesc ?? 'Reklam izleyerek bu temayı açın.',
+            onUnlocked: () {
+              setState(() {
+                if (key == 'sepia') _sepiaUnlocked = true;
+                if (key == 'night') _nightUnlocked = true;
+              });
+              _setTheme(key);
+            },
+          );
+          return;
+        }
+        _setTheme(key);
+      },
+      child: Container(
+        margin: const EdgeInsets.only(left: 6),
+        width: 30,
+        height: 30,
+        decoration: BoxDecoration(
+            shape: BoxShape.circle,
+            color: color,
+            border: Border.all(
+                color: sel ? gold : gold.withOpacity(0.3), width: sel ? 2 : 1)),
+        child: locked
+            ? Icon(Icons.lock,
+                size: 12,
+                color: key == 'night' ? Colors.white70 : Colors.black45)
+            : null,
+      ),
+    );
+  }
+
   Widget _buildPageContent(List<Map<String, dynamic>> ayahs, int page,
       Color gold, bool isDark, Color bg) {
+    final textColor = _theme == 'night'
+        ? const Color(0xFFE8DCC8)
+        : _theme == 'sepia'
+            ? const Color(0xFF1A1208)
+            : (isDark ? const Color(0xFFE8DCC8) : const Color(0xFF1A1208));
     String? currentSurahName;
     final widgets = <Widget>[];
     for (int i = 0; i < ayahs.length; i++) {
@@ -6760,11 +7237,7 @@ class _MushafTabState extends State<MushafTab> {
             TextSpan(
                 text: text,
                 style: GoogleFonts.notoNaskhArabic(
-                    fontSize: _fontSize,
-                    height: 2.0,
-                    color: isDark
-                        ? const Color(0xFFE8DCC8)
-                        : const Color(0xFF1A1208))),
+                    fontSize: _fontSize, height: 2.0, color: textColor)),
             WidgetSpan(
                 alignment: PlaceholderAlignment.middle,
                 child: _ayahNumber(ayahNum, gold, isDark)),
@@ -6775,7 +7248,7 @@ class _MushafTabState extends State<MushafTab> {
     return Container(
         color: bg,
         child: SingleChildScrollView(
-          padding: const EdgeInsets.fromLTRB(18, 90, 18, 80),
+          padding: const EdgeInsets.fromLTRB(18, 130, 18, 80),
           child:
               Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
             Center(
@@ -6805,9 +7278,16 @@ class _MushafTabState extends State<MushafTab> {
       padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 20),
       decoration: BoxDecoration(
           gradient: LinearGradient(
-              colors: isDark
+              colors: _theme == 'night'
                   ? [const Color(0xFF1A2332), const Color(0xFF0D1117)]
-                  : [const Color(0xFFFAF3E0), const Color(0xFFEDE3D0)]),
+                  : _theme == 'sepia'
+                      ? [const Color(0xFFFAF3E0), const Color(0xFFEDE3D0)]
+                      : (isDark
+                          ? [const Color(0xFF1A2332), const Color(0xFF0D1117)]
+                          : [
+                              const Color(0xFFFAF3E0),
+                              const Color(0xFFEDE3D0)
+                            ])),
           borderRadius: BorderRadius.circular(12),
           border: Border.all(color: gold.withOpacity(0.35))),
       child: Column(children: [
@@ -6853,7 +7333,6 @@ class _MushafTabState extends State<MushafTab> {
       required String label,
       required bool enabled,
       required Color gold,
-      required bool isDark,
       required VoidCallback onTap,
       bool iconFirst = true}) {
     final color = enabled ? gold : gold.withOpacity(0.3);
@@ -6872,7 +7351,7 @@ class _MushafTabState extends State<MushafTab> {
 }
 
 // ─────────────────────────────────────────────
-//  AUDIO TAB  —  Tüm kariler ile
+//  AUDIO TAB  —  Tüm kariler (ilk 4 ücretsiz, gerisi reklamla açılır)
 // ─────────────────────────────────────────────
 class AudioTab extends StatefulWidget {
   final List<SurahMeta> surahs;
@@ -6894,6 +7373,7 @@ class _AudioTabState extends State<AudioTab> with TickerProviderStateMixin {
   final _search = TextEditingController();
   List<SurahMeta> _filtered = [];
   late AnimationController _waveCtrl;
+  bool _recitersUnlocked = false;
 
   @override
   void initState() {
@@ -6904,6 +7384,10 @@ class _AudioTabState extends State<AudioTab> with TickerProviderStateMixin {
     _waveCtrl = AnimationController(
         vsync: this, duration: const Duration(milliseconds: 800));
 
+    PremiumUnlockService.isUnlocked(PremiumUnlockService.keyReciters).then((v) {
+      if (mounted) setState(() => _recitersUnlocked = v);
+    });
+
     _player.playerStateStream.listen((state) {
       if (mounted) {
         setState(() {
@@ -6911,10 +7395,11 @@ class _AudioTabState extends State<AudioTab> with TickerProviderStateMixin {
           _isLoading = state.processingState == ProcessingState.loading ||
               state.processingState == ProcessingState.buffering;
         });
-        if (state.playing)
+        if (state.playing) {
           _waveCtrl.repeat(reverse: true);
-        else
+        } else {
           _waveCtrl.stop();
+        }
       }
     });
 
@@ -6999,25 +7484,47 @@ class _AudioTabState extends State<AudioTab> with TickerProviderStateMixin {
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
     return Column(children: [
-      // Kari seçimi
       Container(
         padding: const EdgeInsets.fromLTRB(12, 10, 12, 0),
         child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          Text('Kari Seç',
-              style: TextStyle(
-                  fontSize: 11,
-                  fontWeight: FontWeight.w700,
-                  color: gold,
-                  letterSpacing: 0.5)),
+          Row(children: [
+            Text('Kari Seç',
+                style: TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w700,
+                    color: gold,
+                    letterSpacing: 0.5)),
+            if (!_recitersUnlocked) ...[
+              const SizedBox(width: 6),
+              Text('(4 ücretsiz)',
+                  style: TextStyle(fontSize: 10, color: gold.withOpacity(0.6))),
+            ],
+          ]),
           const SizedBox(height: 6),
           SizedBox(
               height: 36,
               child: ListView(
                   scrollDirection: Axis.horizontal,
-                  children: kReciters.entries.map((e) {
+                  children:
+                      kReciters.entries.toList().asMap().entries.map((entry) {
+                    final idx = entry.key;
+                    final e = entry.value;
+                    final locked = idx >= 4 && !_recitersUnlocked;
                     final sel = _currentReciter == e.key;
                     return GestureDetector(
                       onTap: () {
+                        if (locked) {
+                          PremiumUnlockService.showUnlockDialog(
+                            context,
+                            unlockKey: PremiumUnlockService.keyReciters,
+                            title: 'Tüm Kariler',
+                            desc:
+                                '12 kariyi sınırsız dinlemek için kısa bir reklam izleyin.',
+                            onUnlocked: () =>
+                                setState(() => _recitersUnlocked = true),
+                          );
+                          return;
+                        }
                         setState(() => _currentReciter = e.key);
                         if (_playingSurah != null) {
                           _player.stop();
@@ -7035,21 +7542,25 @@ class _AudioTabState extends State<AudioTab> with TickerProviderStateMixin {
                             borderRadius: BorderRadius.circular(20),
                             border: Border.all(
                                 color: sel ? gold : gold.withOpacity(0.3))),
-                        child: Text(e.value['name']!,
-                            style: TextStyle(
-                                fontSize: 10,
-                                color: sel ? Colors.black : gold,
-                                fontWeight:
-                                    sel ? FontWeight.w700 : FontWeight.w500),
-                            overflow: TextOverflow.ellipsis),
+                        child: Row(mainAxisSize: MainAxisSize.min, children: [
+                          if (locked) ...[
+                            PremiumUnlockService.lockBadge(gold),
+                            const SizedBox(width: 4),
+                          ],
+                          Text(e.value['name']!,
+                              style: TextStyle(
+                                  fontSize: 10,
+                                  color: sel ? Colors.black : gold,
+                                  fontWeight:
+                                      sel ? FontWeight.w700 : FontWeight.w500),
+                              overflow: TextOverflow.ellipsis),
+                        ]),
                       ),
                     );
                   }).toList())),
         ]),
       ),
-
       if (_playingSurah != null) _buildMiniPlayer(gold, isDark),
-
       Padding(
           padding: const EdgeInsets.fromLTRB(12, 10, 12, 4),
           child: TextField(
@@ -7064,7 +7575,6 @@ class _AudioTabState extends State<AudioTab> with TickerProviderStateMixin {
                     borderRadius: BorderRadius.circular(12),
                     borderSide: BorderSide.none)),
           )),
-
       Expanded(
           child: widget.surahs.isEmpty
               ? _loadingCenter()
@@ -7264,8 +7774,8 @@ class _AudioTabState extends State<AudioTab> with TickerProviderStateMixin {
                     border: Border.all(
                         color: isThis ? gold : gold.withOpacity(0.25))),
                 child: isThis && _isLoading
-                    ? Padding(
-                        padding: const EdgeInsets.all(10),
+                    ? const Padding(
+                        padding: EdgeInsets.all(10),
                         child: CircularProgressIndicator(
                             color: Colors.white, strokeWidth: 2))
                     : isThis && _isPlaying
@@ -7345,7 +7855,7 @@ class _AudioTabState extends State<AudioTab> with TickerProviderStateMixin {
 }
 
 /// ─────────────────────────────────────────────
-//  QIBLA EKRANI  —  Profesyonel yeniden tasarım
+//  QIBLA EKRANI
 // ─────────────────────────────────────────────
 class QiblaScreen extends StatefulWidget {
   const QiblaScreen({super.key});
@@ -7364,7 +7874,6 @@ class _QiblaScreenState extends State<QiblaScreen>
   String _cityName = '';
   StreamSubscription<CompassEvent>? _compassSub;
 
-  // Animasyonlar
   late AnimationController _rotateCtrl;
   late AnimationController _pulseCtrl;
   late Animation<double> _pulseAnim;
@@ -7396,11 +7905,12 @@ class _QiblaScreenState extends State<QiblaScreen>
   }
 
   Future<void> _initQibla() async {
-    if (mounted)
+    if (mounted) {
       setState(() {
         _loading = true;
         _error = '';
       });
+    }
     try {
       var perm = await Geolocator.checkPermission();
       if (perm == LocationPermission.denied) {
@@ -7410,7 +7920,6 @@ class _QiblaScreenState extends State<QiblaScreen>
         throw Exception(L.locationPermDenied);
       }
 
-      // Önce son bilinen konumu hızlıca al, sonra doğru konumu al
       Position? lastPos = await Geolocator.getLastKnownPosition();
       if (lastPos != null && mounted) {
         _setPosition(lastPos);
@@ -7422,21 +7931,20 @@ class _QiblaScreenState extends State<QiblaScreen>
               timeLimit: Duration(seconds: 10)));
       if (mounted) _setPosition(pos);
     } catch (e) {
-      if (mounted)
+      if (mounted) {
         setState(() {
           _loading = false;
           _error = e.toString();
         });
+      }
       return;
     }
 
-    // Pusula başlat
     _compassSub?.cancel();
     _compassSub = FlutterCompass.events?.listen((e) {
       if (!mounted || e.heading == null) return;
       double raw = e.heading!;
 
-      // Smooth geçiş: kısa yol hesabı
       double diff = raw - _prevHeading;
       if (diff > 180) diff -= 360;
       if (diff < -180) diff += 360;
@@ -7480,7 +7988,7 @@ class _QiblaScreenState extends State<QiblaScreen>
   }
 
   double _calcDistance(double lat1, double lon1, double lat2, double lon2) {
-    const R = 6371.0;
+    const rEarth = 6371.0;
     final dLat = (lat2 - lat1) * math.pi / 180;
     final dLon = (lon2 - lon1) * math.pi / 180;
     final a = math.sin(dLat / 2) * math.sin(dLat / 2) +
@@ -7488,7 +7996,7 @@ class _QiblaScreenState extends State<QiblaScreen>
             math.cos(lat2 * math.pi / 180) *
             math.sin(dLon / 2) *
             math.sin(dLon / 2);
-    return R * 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a));
+    return rEarth * 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a));
   }
 
   bool get _isAligned {
@@ -7566,7 +8074,6 @@ class _QiblaScreenState extends State<QiblaScreen>
       child: SingleChildScrollView(
         padding: const EdgeInsets.fromLTRB(20, 12, 20, 24),
         child: Column(children: [
-          // ── Konum bilgisi ──
           if (_cityName.isNotEmpty)
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
@@ -7589,23 +8096,17 @@ class _QiblaScreenState extends State<QiblaScreen>
                         color: isDark ? Colors.white38 : Colors.black38)),
               ]),
             ),
-
           const SizedBox(height: 24),
-
-          // ── Pusula ──
           ScaleTransition(
             scale: aligned ? _pulseAnim : const AlwaysStoppedAnimation(1.0),
             child: SizedBox(
               width: 300,
               height: 300,
               child: Stack(alignment: Alignment.center, children: [
-                // Dış halka – derece çizgileri
                 CustomPaint(
                     size: const Size(300, 300),
                     painter: _CompassRingPainter(
                         heading: _heading, gold: gold, isDark: isDark)),
-
-                // Ana daire
                 Container(
                   width: 260,
                   height: 260,
@@ -7629,8 +8130,6 @@ class _QiblaScreenState extends State<QiblaScreen>
                         width: aligned ? 2.5 : 1.5),
                   ),
                 ),
-
-                // Hizalanma göstergesi
                 if (aligned)
                   Container(
                     width: 260,
@@ -7643,15 +8142,10 @@ class _QiblaScreenState extends State<QiblaScreen>
                       ]),
                     ),
                   ),
-
-                // Yön etiketleri
                 ..._compassLabels(isDark),
-
-                // Kıble ibresi
                 Transform.rotate(
                   angle: needleAngle,
                   child: Column(mainAxisSize: MainAxisSize.min, children: [
-                    // Üst (Kabe yönü)
                     Container(
                       width: 4,
                       height: 100,
@@ -7664,7 +8158,6 @@ class _QiblaScreenState extends State<QiblaScreen>
                             top: Radius.circular(2)),
                       ),
                     ),
-                    // Merkez top
                     Container(
                       width: 18,
                       height: 18,
@@ -7676,7 +8169,6 @@ class _QiblaScreenState extends State<QiblaScreen>
                                 color: gold.withOpacity(0.6), blurRadius: 8)
                           ]),
                     ),
-                    // Alt (güney)
                     Container(
                       width: 4,
                       height: 80,
@@ -7694,8 +8186,6 @@ class _QiblaScreenState extends State<QiblaScreen>
                     ),
                   ]),
                 ),
-
-                // Kabe simgesi (ibrenin ucunda)
                 Transform.translate(
                   offset: Offset(
                     100 * math.sin(needleAngle),
@@ -7715,8 +8205,6 @@ class _QiblaScreenState extends State<QiblaScreen>
                         child: Text('🕋', style: TextStyle(fontSize: 16))),
                   ),
                 ),
-
-                // Merkez nokta
                 Container(
                   width: 10,
                   height: 10,
@@ -7727,10 +8215,7 @@ class _QiblaScreenState extends State<QiblaScreen>
               ]),
             ),
           ),
-
           const SizedBox(height: 24),
-
-          // ── Hizalanma badge ──
           AnimatedContainer(
             duration: const Duration(milliseconds: 400),
             padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
@@ -7755,10 +8240,7 @@ class _QiblaScreenState extends State<QiblaScreen>
                       color: aligned ? Colors.green : gold)),
             ]),
           ),
-
           const SizedBox(height: 20),
-
-          // ── Açı bilgileri ──
           Row(children: [
             Expanded(
                 child: _infoTile(
@@ -7778,10 +8260,7 @@ class _QiblaScreenState extends State<QiblaScreen>
               isDark: isDark,
             )),
           ]),
-
           const SizedBox(height: 12),
-
-          // ── Kalibrasyon notu ──
           Container(
             padding: const EdgeInsets.all(12),
             decoration: BoxDecoration(
